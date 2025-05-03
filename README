@@ -1,0 +1,103 @@
+# Narnia Proxy Manager
+
+Narnia is a CLI (command line interface) program designed to manage proxies in Nginx. It also provides a native built-in SSL certificate client for Let's Encrypt.
+
+## Overview
+
+Narnia simplifies the management of Nginx proxy configurations by providing a command-line interface to create, enable, disable, and manage SSL certificates for your proxies.
+
+## Installation
+
+```bash
+# Install Narnia
+narnia install
+```
+
+This command creates the necessary directories for Narnia to function properly.
+
+## Configuration
+
+Narnia reads configuration from the following files (in order of precedence):
+
+- _`/etc/narnia/narnia.conf`_
+- _`./local.conf`_ (in the Narnia installation directory)
+- _`./local.conf`_ (in the current working directory)
+
+## Commands
+
+### List Proxies
+
+```bash
+narnia list
+```
+
+Lists all configured proxies and their status.
+
+### Create a Proxy
+
+```bash
+narnia create <name> --address <address> [--keepalive <value>] [--additional <domains>]
+```
+
+Creates a new proxy configuration.
+
+- _`<name>`_: The domain name for the proxy
+- _`--address`_: The target address (e.g., _`http://localhost:3000`_)
+- _`--keepalive`_: (Optional) Number of keepalive connections (default: 192)
+- _`--additional`_: (Optional) Additional domain names, comma-separated
+
+### Update a Proxy
+
+```bash
+narnia set <name> [--address <address>] [--keepalive <value>] [--additional <domains>] [--add-domain <domains>]
+```
+
+Creates a new proxy configuration.
+
+- _`<name>`_: The domain name for the proxy
+- _`--address`_: (Optional) New target address (e.g., _`http://localhost:4000`_)
+- _`--keepalive`_: (Optional) Replace all additional domains
+- _`--additional`_: (Optional) Add more domains to the existing list
+
+### Enable a Proxy
+
+```bash
+narnia enable <name>
+```
+
+Enables a proxy by creating a symlink in Nginx's sites-enabled directory and reloading Nginx.
+
+### Disable a Proxy
+
+```bash
+narnia disable <name>
+```
+
+Disables a proxy by removing the symlink from Nginx's sites-enabled directory and reloading Nginx.
+
+### Delete a Proxy
+
+```bash
+narnia delete <name>
+```
+
+Deletes a proxy configuration and removes it from Nginx.
+
+### SSL Certificate Management
+
+```bash
+narnia ssl <name> --generate [--staging]
+```
+
+Generates an SSL certificate for the proxy using Let's Encrypt.
+
+- _`<name>`_: The domain name of the proxy
+- _`--generate`_: Generate a new certificate
+- _`--staging`_: (Optional) Use Let's Encrypt staging environment for testing
+
+### Help and Version
+
+```bash
+narnia --help  
+narnia --version
+```
