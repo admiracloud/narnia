@@ -1,0 +1,9 @@
+Package: narnia
+Version: 0.2.2
+Section: admin
+Priority: optional
+Architecture: amd64
+Maintainer: Paulo Coghi <paulo@adimira.com>
+Description: Naria Proxy Manager for Nginx
+ Narnia is a CLI (command line interface) program to manage proxies in Nginx
+ It also provides a native built-in SSL certificate client for Let's Encrypt

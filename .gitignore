@@ -1,0 +1,26 @@
+# Generated bundles files
+#cli.js
+
+# Coverage directory used by tools like istanbul
+coverage
+
+# Dependency directories
+node_modules/
+
+# Distribution files
+dist/usr/local/bin/narnia
+dist/usr/bin/narnia
+*.deb
+
+# Local configuration file to override the defult config
+local.conf
+
+# macOS contributros
+.DS_Store
+
+# VS Code directory
+.vscode
+
+# lock files
+# allow only pnpm pnpm-lock.yaml, ignoring package-lock.json
+package-lock.json

@@ -1,0 +1,8 @@
+coverage/
+other/media/
+other/rollup/
+src/
+test/
+.travis.yml
+codecov.yml
+.vscode

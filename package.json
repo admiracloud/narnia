@@ -1,0 +1,27 @@
+{
+  "name": "narnia",
+  "version": "0.2.2",
+  "description": "Nginx proxy manager and Let's Encrypt SSL certificate manager in pure Javascript",
+  "main": "cli.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "bundle": "node src/deb/template.js && rollup --config build/rollup/cli.js"
+  },
+  "imports": {
+    "#*": "./src/*"
+  },
+  "keywords": [],
+  "author": "Paulo Coghi",
+  "license": "MIT",
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^26.0.1",
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "@rollup/plugin-terser": "^0.4.4",
+    "acme-client": "^5.3.1",
+    "esbuild": "0.22.0",
+    "httpie": "^1.1.2",
+    "mri": "^1.2.0"
+  }
+}
