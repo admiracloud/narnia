@@ -19,9 +19,9 @@ This command creates the necessary directories for Narnia to function properly.
 
 Narnia reads configuration from the following files (in order of precedence):
 
-- _`/etc/narnia/narnia.conf`_
-- _`./local.conf`_ (in the Narnia installation directory)
-- _`./local.conf`_ (in the current working directory)
+- `/etc/narnia/narnia.conf`
+- `./local.conf` (in the Narnia installation directory)
+- `./local.conf` (in the current working directory)
 
 ## Commands
 
@@ -41,10 +41,10 @@ narnia create <name> --address <address> [--keepalive <value>] [--additional <do
 
 Creates a new proxy configuration.
 
-- _`<name>`_: The domain name for the proxy
-- _`--address`_: The target address (e.g., _`http://localhost:3000`_)
-- _`--keepalive`_: (Optional) Number of keepalive connections (default: 192)
-- _`--additional`_: (Optional) Additional domain names, comma-separated
+- `<name>`: The domain name for the proxy
+- `--address`: The target address (e.g., `http://localhost:3000`)
+- `--keepalive`: (Optional) Number of keepalive connections (default: 192)
+- `--additional`: (Optional) Additional domain names, comma-separated
 
 ### Update a Proxy
 
@@ -52,12 +52,13 @@ Creates a new proxy configuration.
 narnia set <name> [--address <address>] [--keepalive <value>] [--additional <domains>] [--add-domain <domains>]
 ```
 
-Creates a new proxy configuration.
+Updates an existing proxy configuration.
 
-- _`<name>`_: The domain name for the proxy
-- _`--address`_: (Optional) New target address (e.g., _`http://localhost:4000`_)
-- _`--keepalive`_: (Optional) Replace all additional domains
-- _`--additional`_: (Optional) Add more domains to the existing list
+- `<name>`: The domain name for the proxy
+- `--address`: (Optional) New target address (e.g., `http://localhost:4000`)
+- `--keepalive`: (Optional) Replace all additional domains
+- `--additional`: (Optional) Replace all additional domains with the specified comma-separated domains
+- `--add-domain`: (Optional) Add more domains to the existing list
 
 ### Enable a Proxy
 
@@ -91,9 +92,9 @@ narnia ssl <name> --generate [--staging]
 
 Generates an SSL certificate for the proxy using Let's Encrypt.
 
-- _`<name>`_: The domain name of the proxy
-- _`--generate`_: Generate a new certificate
-- _`--staging`_: (Optional) Use Let's Encrypt staging environment for testing
+- `<name>`: The domain name of the proxy
+- `--generate`: Generate a new certificate
+- `--staging`: (Optional) Use Let's Encrypt staging environment for testing
 
 ### Help and Version
 
