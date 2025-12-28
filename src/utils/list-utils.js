@@ -36,7 +36,7 @@ export const list_table = function ( proxies ) {
 
       // Replace certificate boolean
       if ( column == 'certificate' )
-        proxy[column] = proxy[column] ? 'enabled' : ''
+        proxy[column] = ( proxy[column] === true || proxy[column] === 'true' ) ? 'enabled' : ''
 
       // Replace keepalive with empty string when 0
       if ( column == 'keepalive' )

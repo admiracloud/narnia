@@ -174,7 +174,7 @@ const list_table = function ( proxies ) {
 
       // Replace certificate boolean
       if ( column == 'certificate' )
-        proxy[column] = proxy[column] ? 'enabled' : '';
+        proxy[column] = ( proxy[column] === true || proxy[column] === 'true' ) ? 'enabled' : '';
 
       // Replace keepalive with empty string when 0
       if ( column == 'keepalive' )
@@ -4841,7 +4841,7 @@ var Reflect$1;
         // 7.1.1.1 OrdinaryToPrimitive(O, hint)
         // https://tc39.github.io/ecma262/#sec-ordinarytoprimitive
         function OrdinaryToPrimitive(O, hint) {
-            var valueOf, result; {
+            var valueOf, result, toString_2; {
                 var toString_1 = O.toString;
                 if (IsCallable(toString_1)) {
                     var result = toString_1.call(O);
@@ -14930,17 +14930,17 @@ var hasRequiredBrowser;
 function requireBrowser () {
 	if (hasRequiredBrowser) return browser.exports;
 	hasRequiredBrowser = 1;
-	(function (module, exports) {
+	(function (module, exports$1) {
 		/**
 		 * This is the web browser implementation of `debug()`.
 		 */
 
-		exports.formatArgs = formatArgs;
-		exports.save = save;
-		exports.load = load;
-		exports.useColors = useColors;
-		exports.storage = localstorage();
-		exports.destroy = (() => {
+		exports$1.formatArgs = formatArgs;
+		exports$1.save = save;
+		exports$1.load = load;
+		exports$1.useColors = useColors;
+		exports$1.storage = localstorage();
+		exports$1.destroy = (() => {
 			let warned = false;
 
 			return () => {
@@ -14955,7 +14955,7 @@ function requireBrowser () {
 		 * Colors.
 		 */
 
-		exports.colors = [
+		exports$1.colors = [
 			'#0000CC',
 			'#0000FF',
 			'#0033CC',
@@ -15117,7 +15117,7 @@ function requireBrowser () {
 		 *
 		 * @api public
 		 */
-		exports.log = console.debug || console.log || (() => {});
+		exports$1.log = console.debug || console.log || (() => {});
 
 		/**
 		 * Save `namespaces`.
@@ -15128,9 +15128,9 @@ function requireBrowser () {
 		function save(namespaces) {
 			try {
 				if (namespaces) {
-					exports.storage.setItem('debug', namespaces);
+					exports$1.storage.setItem('debug', namespaces);
 				} else {
-					exports.storage.removeItem('debug');
+					exports$1.storage.removeItem('debug');
 				}
 			} catch (error) {
 				// Swallow
@@ -15147,7 +15147,7 @@ function requireBrowser () {
 		function load() {
 			let r;
 			try {
-				r = exports.storage.getItem('debug');
+				r = exports$1.storage.getItem('debug');
 			} catch (error) {
 				// Swallow
 				// XXX (@Qix-) should we be logging these?
@@ -15183,7 +15183,7 @@ function requireBrowser () {
 			}
 		}
 
-		module.exports = requireCommon()(exports);
+		module.exports = requireCommon()(exports$1);
 
 		const {formatters} = module.exports;
 
@@ -15213,7 +15213,7 @@ var hasRequiredNode;
 function requireNode () {
 	if (hasRequiredNode) return node.exports;
 	hasRequiredNode = 1;
-	(function (module, exports) {
+	(function (module, exports$1) {
 		const tty = require$$0$4;
 		const util = require$$1$1;
 
@@ -15221,13 +15221,13 @@ function requireNode () {
 		 * This is the Node.js implementation of `debug()`.
 		 */
 
-		exports.init = init;
-		exports.log = log;
-		exports.formatArgs = formatArgs;
-		exports.save = save;
-		exports.load = load;
-		exports.useColors = useColors;
-		exports.destroy = util.deprecate(
+		exports$1.init = init;
+		exports$1.log = log;
+		exports$1.formatArgs = formatArgs;
+		exports$1.save = save;
+		exports$1.load = load;
+		exports$1.useColors = useColors;
+		exports$1.destroy = util.deprecate(
 			() => {},
 			'Instance method `debug.destroy()` is deprecated and no longer does anything. It will be removed in the next major version of `debug`.'
 		);
@@ -15236,7 +15236,7 @@ function requireNode () {
 		 * Colors.
 		 */
 
-		exports.colors = [6, 2, 3, 4, 5, 1];
+		exports$1.colors = [6, 2, 3, 4, 5, 1];
 
 		try {
 			// Optional dependency (as in, doesn't need to be installed, NOT like optionalDependencies in package.json)
@@ -15244,7 +15244,7 @@ function requireNode () {
 			const supportsColor = require('supports-color');
 
 			if (supportsColor && (supportsColor.stderr || supportsColor).level >= 2) {
-				exports.colors = [
+				exports$1.colors = [
 					20,
 					21,
 					26,
@@ -15333,7 +15333,7 @@ function requireNode () {
 		 *   $ DEBUG_COLORS=no DEBUG_DEPTH=10 DEBUG_SHOW_HIDDEN=enabled node script.js
 		 */
 
-		exports.inspectOpts = Object.keys(process.env).filter(key => {
+		exports$1.inspectOpts = Object.keys(process.env).filter(key => {
 			return /^debug_/i.test(key);
 		}).reduce((obj, key) => {
 			// Camel-case
@@ -15365,8 +15365,8 @@ function requireNode () {
 		 */
 
 		function useColors() {
-			return 'colors' in exports.inspectOpts ?
-				Boolean(exports.inspectOpts.colors) :
+			return 'colors' in exports$1.inspectOpts ?
+				Boolean(exports$1.inspectOpts.colors) :
 				tty.isatty(process.stderr.fd);
 		}
 
@@ -15392,7 +15392,7 @@ function requireNode () {
 		}
 
 		function getDate() {
-			if (exports.inspectOpts.hideDate) {
+			if (exports$1.inspectOpts.hideDate) {
 				return '';
 			}
 			return new Date().toISOString() + ' ';
@@ -15403,7 +15403,7 @@ function requireNode () {
 		 */
 
 		function log(...args) {
-			return process.stderr.write(util.formatWithOptions(exports.inspectOpts, ...args) + '\n');
+			return process.stderr.write(util.formatWithOptions(exports$1.inspectOpts, ...args) + '\n');
 		}
 
 		/**
@@ -15443,13 +15443,13 @@ function requireNode () {
 		function init(debug) {
 			debug.inspectOpts = {};
 
-			const keys = Object.keys(exports.inspectOpts);
+			const keys = Object.keys(exports$1.inspectOpts);
 			for (let i = 0; i < keys.length; i++) {
-				debug.inspectOpts[keys[i]] = exports.inspectOpts[keys[i]];
+				debug.inspectOpts[keys[i]] = exports$1.inspectOpts[keys[i]];
 			}
 		}
 
-		module.exports = requireCommon()(exports);
+		module.exports = requireCommon()(exports$1);
 
 		const {formatters} = module.exports;
 
@@ -26561,7 +26561,7 @@ var mimeDb = require$$0;
  * MIT Licensed
  */
 
-(function (exports) {
+(function (exports$1) {
 
 	/**
 	 * Module dependencies.
@@ -26584,16 +26584,16 @@ var mimeDb = require$$0;
 	 * @public
 	 */
 
-	exports.charset = charset;
-	exports.charsets = { lookup: charset };
-	exports.contentType = contentType;
-	exports.extension = extension;
-	exports.extensions = Object.create(null);
-	exports.lookup = lookup;
-	exports.types = Object.create(null);
+	exports$1.charset = charset;
+	exports$1.charsets = { lookup: charset };
+	exports$1.contentType = contentType;
+	exports$1.extension = extension;
+	exports$1.extensions = Object.create(null);
+	exports$1.lookup = lookup;
+	exports$1.types = Object.create(null);
 
 	// Populate the extensions/types maps
-	populateMaps(exports.extensions, exports.types);
+	populateMaps(exports$1.extensions, exports$1.types);
 
 	/**
 	 * Get the default charset for a MIME type.
@@ -26637,7 +26637,7 @@ var mimeDb = require$$0;
 	  }
 
 	  var mime = str.indexOf('/') === -1
-	    ? exports.lookup(str)
+	    ? exports$1.lookup(str)
 	    : str;
 
 	  if (!mime) {
@@ -26646,7 +26646,7 @@ var mimeDb = require$$0;
 
 	  // TODO: use content-type or other module
 	  if (mime.indexOf('charset') === -1) {
-	    var charset = exports.charset(mime);
+	    var charset = exports$1.charset(mime);
 	    if (charset) mime += '; charset=' + charset.toLowerCase();
 	  }
 
@@ -26669,7 +26669,7 @@ var mimeDb = require$$0;
 	  var match = EXTRACT_TYPE_REGEXP.exec(type);
 
 	  // get extensions
-	  var exts = match && exports.extensions[match[1].toLowerCase()];
+	  var exts = match && exports$1.extensions[match[1].toLowerCase()];
 
 	  if (!exts || !exts.length) {
 	    return false
@@ -26699,7 +26699,7 @@ var mimeDb = require$$0;
 	    return false
 	  }
 
-	  return exports.types[extension] || false
+	  return exports$1.types[extension] || false
 	}
 
 	/**
@@ -28257,7 +28257,7 @@ RedirectableRequest.prototype._processResponse = function (response) {
 // Wraps the key/value object of protocols with redirect functionality
 function wrap(protocols) {
   // Default settings
-  var exports = {
+  var exports$1 = {
     maxRedirects: 21,
     maxBodyLength: 10 * 1024 * 1024,
   };
@@ -28267,7 +28267,7 @@ function wrap(protocols) {
   Object.keys(protocols).forEach(function (scheme) {
     var protocol = scheme + ":";
     var nativeProtocol = nativeProtocols[protocol] = protocols[scheme];
-    var wrappedProtocol = exports[scheme] = Object.create(nativeProtocol);
+    var wrappedProtocol = exports$1[scheme] = Object.create(nativeProtocol);
 
     // Executes a request, following redirects
     function request(input, options, callback) {
@@ -28290,8 +28290,8 @@ function wrap(protocols) {
 
       // Set defaults
       options = Object.assign({
-        maxRedirects: exports.maxRedirects,
-        maxBodyLength: exports.maxBodyLength,
+        maxRedirects: exports$1.maxRedirects,
+        maxBodyLength: exports$1.maxBodyLength,
       }, input, options);
       options.nativeProtocols = nativeProtocols;
       if (!isString$1(options.host) && !isString$1(options.hostname)) {
@@ -28316,7 +28316,7 @@ function wrap(protocols) {
       get: { value: get, configurable: true, enumerable: true, writable: true },
     });
   });
-  return exports;
+  return exports$1;
 }
 
 function noop$1() { /* empty */ }
@@ -29883,7 +29883,7 @@ function stringifySafely(rawValue, parser, encoder) {
     }
   }
 
-  return (0, JSON.stringify)(rawValue);
+  return (encoder || JSON.stringify)(rawValue);
 }
 
 const defaults = {
@@ -33147,79 +33147,10 @@ axios$3.default = axios$3;
 var axios_1$1 = axios$3;
 
 var name = "acme-client";
-var description = "Simple and unopinionated ACME client";
-var author = "nmorsman";
 var version = "5.3.1";
-var main = "src/index.js";
-var types = "types/index.d.ts";
-var license = "MIT";
-var homepage = "https://github.com/publishlab/node-acme-client";
-var engines = {
-	node: ">= 16"
-};
-var files$1 = [
-	"src",
-	"types"
-];
-var dependencies = {
-	"@peculiar/x509": "^1.10.0",
-	asn1js: "^3.0.5",
-	axios: "^1.7.2",
-	debug: "^4.1.1",
-	"node-forge": "^1.3.1"
-};
-var devDependencies = {
-	"@types/node": "^20.12.12",
-	chai: "^4.4.1",
-	"chai-as-promised": "^7.1.2",
-	eslint: "^8.57.0",
-	"eslint-config-airbnb-base": "^15.0.0",
-	"eslint-plugin-import": "^2.29.1",
-	"jsdoc-to-markdown": "^8.0.1",
-	mocha: "^10.4.0",
-	nock: "^13.5.4",
-	tsd: "^0.31.0"
-};
-var scripts = {
-	"build-docs": "jsdoc2md src/client.js > docs/client.md && jsdoc2md src/crypto/index.js > docs/crypto.md && jsdoc2md src/crypto/forge.js > docs/forge.md",
-	lint: "eslint .",
-	"lint-types": "tsd",
-	prepublishOnly: "npm run build-docs",
-	test: "mocha -t 60000 \"test/setup.js\" \"test/**/*.spec.js\""
-};
-var repository = {
-	type: "git",
-	url: "https://github.com/publishlab/node-acme-client"
-};
-var keywords = [
-	"acme",
-	"client",
-	"lets",
-	"encrypt",
-	"acmev2",
-	"boulder"
-];
-var bugs = {
-	url: "https://github.com/publishlab/node-acme-client/issues"
-};
 var require$$1 = {
 	name: name,
-	description: description,
-	author: author,
-	version: version,
-	main: main,
-	types: types,
-	license: license,
-	homepage: homepage,
-	engines: engines,
-	files: files$1,
-	dependencies: dependencies,
-	devDependencies: devDependencies,
-	scripts: scripts,
-	repository: repository,
-	keywords: keywords,
-	bugs: bugs
-};
+	version: version};
 
 /**
  * Axios instance
@@ -41611,16 +41542,16 @@ asn1$8.dateToGeneralizedTime = function(date) {
  */
 asn1$8.integerToDer = function(x) {
   var rval = forge$x.util.createBuffer();
-  if(x >= -0x80 && x < 0x80) {
+  if(x >= -128 && x < 0x80) {
     return rval.putSignedInt(x, 8);
   }
-  if(x >= -0x8000 && x < 0x8000) {
+  if(x >= -32768 && x < 0x8000) {
     return rval.putSignedInt(x, 16);
   }
-  if(x >= -0x800000 && x < 0x800000) {
+  if(x >= -8388608 && x < 0x800000) {
     return rval.putSignedInt(x, 24);
   }
-  if(x >= -0x80000000 && x < 0x80000000) {
+  if(x >= -2147483648 && x < 0x80000000) {
     return rval.putSignedInt(x, 32);
   }
   var error = new Error('Integer too large; max is 32-bits.');
@@ -42867,7 +42798,7 @@ function registerAlgorithm(name, mode) {
 /** DES implementation **/
 
 var spfunction1 = [0x1010400,0,0x10000,0x1010404,0x1010004,0x10404,0x4,0x10000,0x400,0x1010400,0x1010404,0x400,0x1000404,0x1010004,0x1000000,0x4,0x404,0x1000400,0x1000400,0x10400,0x10400,0x1010000,0x1010000,0x1000404,0x10004,0x1000004,0x1000004,0x10004,0,0x404,0x10404,0x1000000,0x10000,0x1010404,0x4,0x1010000,0x1010400,0x1000000,0x1000000,0x400,0x1010004,0x10000,0x10400,0x1000004,0x400,0x4,0x1000404,0x10404,0x1010404,0x10004,0x1010000,0x1000404,0x1000004,0x404,0x10404,0x1010400,0x404,0x1000400,0x1000400,0,0x10004,0x10400,0,0x1010004];
-var spfunction2 = [-0x7fef7fe0,-0x7fff8000,0x8000,0x108020,0x100000,0x20,-0x7fefffe0,-0x7fff7fe0,-0x7fffffe0,-0x7fef7fe0,-0x7fef8000,-0x80000000,-0x7fff8000,0x100000,0x20,-0x7fefffe0,0x108000,0x100020,-0x7fff7fe0,0,-0x80000000,0x8000,0x108020,-0x7ff00000,0x100020,-0x7fffffe0,0,0x108000,0x8020,-0x7fef8000,-0x7ff00000,0x8020,0,0x108020,-0x7fefffe0,0x100000,-0x7fff7fe0,-0x7ff00000,-0x7fef8000,0x8000,-0x7ff00000,-0x7fff8000,0x20,-0x7fef7fe0,0x108020,0x20,0x8000,-0x80000000,0x8020,-0x7fef8000,0x100000,-0x7fffffe0,0x100020,-0x7fff7fe0,-0x7fffffe0,0x100020,0x108000,0,-0x7fff8000,0x8020,-0x80000000,-0x7fefffe0,-0x7fef7fe0,0x108000];
+var spfunction2 = [-2146402272,-2147450880,0x8000,0x108020,0x100000,0x20,-2146435040,-2147450848,-2147483616,-2146402272,-2146402304,-2147483648,-2147450880,0x100000,0x20,-2146435040,0x108000,0x100020,-2147450848,0,-2147483648,0x8000,0x108020,-2146435072,0x100020,-2147483616,0,0x108000,0x8020,-2146402304,-2146435072,0x8020,0,0x108020,-2146435040,0x100000,-2147450848,-2146435072,-2146402304,0x8000,-2146435072,-2147450880,0x20,-2146402272,0x108020,0x20,0x8000,-2147483648,0x8020,-2146402304,0x100000,-2147483616,0x100020,-2147450848,-2147483616,0x100020,0x108000,0,-2147450880,0x8020,-2147483648,-2146435040,-2146402272,0x108000];
 var spfunction3 = [0x208,0x8020200,0,0x8020008,0x8000200,0,0x20208,0x8000200,0x20008,0x8000008,0x8000008,0x20000,0x8020208,0x20008,0x8020000,0x208,0x8000000,0x8,0x8020200,0x200,0x20200,0x8020000,0x8020008,0x20208,0x8000208,0x20200,0x20000,0x8000208,0x8,0x8020208,0x200,0x8000000,0x8020200,0x8000000,0x20008,0x208,0x20000,0x8020200,0x8000200,0,0x200,0x20008,0x8020208,0x8000200,0x8000008,0x200,0,0x8020008,0x8000208,0x20000,0x8000000,0x8020208,0x8,0x20208,0x20200,0x8000008,0x8020000,0x8000208,0x208,0x8020000,0x20208,0x8,0x8020008,0x20200];
 var spfunction4 = [0x802001,0x2081,0x2081,0x80,0x802080,0x800081,0x800001,0x2001,0,0x802000,0x802000,0x802081,0x81,0,0x800080,0x800001,0x1,0x2000,0x800000,0x802001,0x80,0x800000,0x2001,0x2080,0x800081,0x1,0x2080,0x800080,0x2000,0x802080,0x802081,0x81,0x800080,0x800001,0x802000,0x802081,0x81,0,0,0x802000,0x2080,0x800080,0x800081,0x1,0x802001,0x2081,0x2081,0x80,0x802081,0x81,0x1,0x2000,0x800001,0x2001,0x802080,0x800081,0x2001,0x2080,0x800000,0x802001,0x80,0x800000,0x2000,0x802080];
 var spfunction5 = [0x100,0x2080100,0x2080000,0x42000100,0x80000,0x100,0x40000000,0x2080000,0x40080100,0x80000,0x2000100,0x40080100,0x42000100,0x42080000,0x80100,0x40000000,0x2000000,0x40080000,0x40080000,0,0x40000100,0x42080100,0x42080100,0x2000100,0x42080000,0x40000100,0,0x42000000,0x2080100,0x2000000,0x42000000,0x80100,0x80000,0x42000100,0x100,0x2000000,0x40000000,0x2080000,0x42000100,0x40080100,0x2000100,0x40000000,0x42080000,0x2080100,0x40080100,0x100,0x2000000,0x42080000,0x42080100,0x80100,0x42000000,0x42080100,0x2080000,0,0x40080000,0x42000000,0x80100,0x2000100,0x40000100,0x80000,0,0x40080000,0x2080100,0x40000100];
@@ -42959,8 +42890,8 @@ function _createKeys(key) {
         left = (left << 1) | (left >>> 27);
         right = (right << 1) | (right >>> 27);
       }
-      left &= -0xf;
-      right &= -0xf;
+      left &= -15;
+      right &= -15;
 
       // now apply PC-2, in such a way that E is easier when encrypting or
       // decrypting this conversion will look like PC-2 except only the last 6
@@ -43161,7 +43092,7 @@ var forge$r = forge$D;
 var pkcs5 = forge$r.pkcs5 = forge$r.pkcs5 || {};
 
 var crypto$1;
-if(forge$r.util.isNodejs && !forge$r.options.usePureJavaScript) {
+if(forge$r.util.isNodejs && true) {
   crypto$1 = require$$0$2;
 }
 
@@ -43190,7 +43121,7 @@ forge$r.pbkdf2 = pkcs5.pbkdf2 = function(
 
   // use native implementation if possible and not disabled, note that
   // some node versions only support SHA-1, others allow digest to be changed
-  if(forge$r.util.isNodejs && !forge$r.options.usePureJavaScript &&
+  if(forge$r.util.isNodejs && true &&
     crypto$1.pbkdf2 && (md === null || typeof md !== 'object') &&
     (crypto$1.pbkdf2Sync.length > 4 || (!md || md === 'sha1'))) {
     if(typeof md !== 'string') {
@@ -43701,7 +43632,7 @@ var forge$p = forge$D;
 
 
 var _crypto$1 = null;
-if(forge$p.util.isNodejs && !forge$p.options.usePureJavaScript &&
+if(forge$p.util.isNodejs && true &&
   !process.versions['node-webkit']) {
   _crypto$1 = require$$0$2;
 }
@@ -63764,10 +63695,9 @@ class LibSSL {
     writeFileSync(this.path.csr, certificateCsr);
     writeFileSync(this.path.domain_key, certificateKey);
 
-    const order = await client.createOrder({
-      identifiers: [
-        { type: 'dns', value: this.proxy.domain }
-      ]
+    const order = await client.createOrder({  
+      identifiers: Array.from(new Set([this.proxy.domain].concat(this.proxy.additional)))  
+        .map(domain => ({ type: 'dns', value: domain }))  
     });
 
     const authorizations = await client.getAuthorizations(order);
@@ -64018,7 +63948,7 @@ class Narnia {
 
     const libssl = new LibSSL(this.config, proxy);
 
-    if( staging ) libssl.stating = true;
+    if( staging ) libssl.staging = true;
 
     const result = await libssl.generate( staging );
 

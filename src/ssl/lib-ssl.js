@@ -149,10 +149,9 @@ export class LibSSL {
     writeFileSync(this.path.csr, certificateCsr);
     writeFileSync(this.path.domain_key, certificateKey);
 
-    const order = await client.createOrder({
-      identifiers: [
-        { type: 'dns', value: this.proxy.domain }
-      ]
+    const order = await client.createOrder({  
+      identifiers: Array.from(new Set([this.proxy.domain].concat(this.proxy.additional)))  
+        .map(domain => ({ type: 'dns', value: domain }))  
     });
 
     const authorizations = await client.getAuthorizations(order);
