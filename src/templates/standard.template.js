@@ -1,4 +1,4 @@
-export class DefaultTemplate {
+export class StandardTemplate {
 
 	constructor( proxy, address, config, wellknown = false ) {
 

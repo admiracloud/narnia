@@ -1,5 +1,6 @@
 const list_columns = {
   domain: 'DOMAIN',
+  template: 'TEMPLATE',
   state: 'STATE',
   address: 'PROXY ADDRESS',
   certificate: 'CERTIFICATE',
@@ -9,6 +10,7 @@ const list_columns = {
 
 const length = {
   domain: 6,
+  template: 8,
   state: 6,
   address: 13,
   certificate: 11,

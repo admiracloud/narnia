@@ -1,10 +1,9 @@
 import { mkdirSync, readdirSync, readFileSync, existsSync, writeFileSync, rmSync } from 'fs';
 import { execSync } from 'child_process';
 
-import { list_table }      from '#utils/list-utils.js'
-import { parseUrl }        from '#utils/url.js';
-import { DefaultTemplate } from '#templates/default.template.js';
-import { LibSSL }          from '#ssl/lib-ssl.js';
+import * as utils     from '#utils/index.js'
+import * as templates from '#templates/index.js';
+import { LibSSL }     from '#ssl/lib-ssl.js';
 
 export class Narnia {
 
@@ -18,11 +17,12 @@ export class Narnia {
       .replace( '/cli.js', '/' )
 
     // Default config
-    this.config.nginx_dir   = '/etc/nginx/'
-    this.config.data_dir    = '/etc/narnia/'
-    this.config.reload      = 'sudo /usr/sbin/service nginx reload'
-    this.config.timeout     = 10000
-    this.config.keepalive   = "192"
+    this.config.nginx_dir        = '/etc/nginx/'
+    this.config.data_dir         = '/etc/narnia/'
+    this.config.reload           = 'sudo /usr/sbin/service nginx reload'
+    this.config.timeout          = 10000
+    this.config.keepalive        = "0"
+    this.config.default_template = "Standard"
 
     // Merge with local config
     Object.assign( this.config, config )
@@ -53,7 +53,7 @@ export class Narnia {
       return { error: `Proxy directory ${this.config.proxy_dir} doesn't exist\nRun 'narnia install' to create it` }
 
     this.retrieve()
-    list_table(this.proxies)
+    utils.list_table(this.proxies)
   }
 
   retrieve() {
@@ -72,11 +72,23 @@ export class Narnia {
     if ( !options.name ) return { error: 'narnia create <name> is required' }
     if ( !options.address ) return { error: '--address <address> is required' }
 
-    const address = parseUrl(options.address)
+    const address = utils.parseUrl(options.address)
     if ( !address.host ) return { error: 'Invalid --address <address>' }
 
     const path = this.config.proxy_dir + options.name
     if ( existsSync(path) ) return { error: `Proxy ${options.name} already exists` }
+
+    // Handle template selection
+    if ( !options.template ) options.template = 'standard';
+
+    // Prepare template name in Title Case
+    options.template = utils.titleCase(options.template);
+
+    // If informed tamplate doesn't exist, return error
+    if (!templates[options.template]) {
+      const available_templates = Object.keys(templates).join(', ');
+      return { error: `Invalid template "${options.template.toLowerCase()}". Available templates: ${available_templates}` }
+    }
 
     const proxy = {
       domain: options.name,
@@ -86,7 +98,8 @@ export class Narnia {
       keepalive: Number.isInteger(options.keepalive) ? '' + options.keepalive : this.config.keepalive,
       additional: options.additional
         ? options.additional.split(',').map(d => d.trim())
-        : []
+        : [],
+      template: options.template
     }
 
     // Create proxy configuration
@@ -101,7 +114,7 @@ export class Narnia {
 
     // Address
     if ( options.address ) {
-      const address = parseUrl(options.address)
+      const address = utils.parseUrl(options.address)
       if ( !address.host ) return { error: 'Invalid --address <address>' }
 
       proxy.address = `${address.protocol}://${address.host}:${address.port}`
@@ -121,6 +134,17 @@ export class Narnia {
     if ( options['add-domain'] ) {
       const additional = options['add-domain'].split(',').map(d => d.trim())
       proxy.additional = Array.from(new Set(proxy.additional.concat(additional)))
+    }
+
+    if ( options.template ) {
+      // Prepare template name in Title Case
+      options.template = utils.titleCase(options.template);
+
+      // If informed tamplate doesn't exist, return error
+      if (!templates[options.template]) {
+        const available_templates = Object.keys(templates).join(', ');
+        return { error: `Invalid template "${options.template.toLowerCase()}". Available templates: ${available_templates}` }
+      }
     }
 
     // Update proxy configuration
@@ -174,8 +198,12 @@ export class Narnia {
     // Create/update proxy configuration reference
     writeFileSync( path, JSON.stringify(proxy), { mode: 0o644 })
 
+    // Use the stored template (fallback to Standard for old proxies)
+    const templateName  = proxy.template || 'Standard';
+    const TemplateClass = templates[templateName] || templates.Standard;
+
     // Create/update nginx configuration
-    const template = new DefaultTemplate(proxy, parseUrl(proxy.address), this.config, wellknown)
+    const template = new TemplateClass(proxy, utils.parseUrl(proxy.address), this.config, wellknown)
 
     // Write nginx configuration
     writeFileSync(

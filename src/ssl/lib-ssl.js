@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, existsSync, writeFileSync, rmSync } from 'fs';
-import path from 'path';
+import path    from 'path';
 import { get } from 'httpie';
-import acme from 'acme-client';
+import acme    from 'acme-client';
 
 export class LibSSL {
 

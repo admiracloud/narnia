@@ -36,7 +36,7 @@ Lists all configured proxies and their status.
 ### Create a Proxy
 
 ```bash
-narnia create <name> --address <address> [--keepalive <value>] [--additional <domains>]
+narnia create <name> --address <address> [--keepalive <value>] [--additional <domains>] [--template <template>]
 ```
 
 Creates a new proxy configuration.
@@ -45,11 +45,12 @@ Creates a new proxy configuration.
 - `--address`: The target address (e.g., `http://localhost:3000`)
 - `--keepalive`: (Optional) Number of keepalive connections (default: 192)
 - `--additional`: (Optional) Additional domain names, comma-separated
+- `--template`: (Optional) Allow to choose a template. Default to `standard`
 
 ### Update a Proxy
 
 ```bash
-narnia set <name> [--address <address>] [--keepalive <value>] [--additional <domains>] [--add-domain <domains>]
+narnia set <name> [--address <address>] [--keepalive <value>] [--additional <domains>] [--add-domain <domains>] [--template <template>]
 ```
 
 Updates an existing proxy configuration.
