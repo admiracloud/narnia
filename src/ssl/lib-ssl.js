@@ -74,19 +74,28 @@ export class LibSSL {
     }
     return readFileSync(this.path.domain_key, 'utf8');
   }
-  
-  // Check certificate expiration
-  expiring() {
-    if (!existsSync(this.path.cert)) return { expired: true };
 
+  // Certificate exists
+  certExists() {
+    return existsSync(this.path.cert);
+  }
+
+  // Certificate date
+  certDate() {
     const certPem = readFileSync(this.path.cert, 'utf8');
     const cert = acme.crypto.readCertificateInfo(certPem);
     const remaining_days = (new Date(cert.notAfter) - new Date()) / (1000 * 60 * 60 * 24);
 
     return {
+      certDate: cert.notAfter,
       days: remaining_days,
-      expired: remaining_days < this.expire_days
-    };
+      expired: certDate.days < this.expire_days
+    }
+  }
+  
+  // Check certificate expiration
+  expiring() {
+    return !this.certExists() ? { expired: true } : this.certDate();
   }
 
   // Asynchronous function to handle the HTTP challenge
@@ -149,8 +158,8 @@ export class LibSSL {
     writeFileSync(this.path.csr, certificateCsr);
     writeFileSync(this.path.domain_key, certificateKey);
 
-    const order = await client.createOrder({  
-      identifiers: Array.from(new Set([this.proxy.domain].concat(this.proxy.additional)))  
+    const order = await client.createOrder({
+      identifiers: Array.from(new Set([this.proxy.domain].concat(this.proxy.additional)))
         .map(domain => ({ type: 'dns', value: domain }))  
     });
 
@@ -188,7 +197,10 @@ export class LibSSL {
     writeFileSync(this.path.cert, cert);
     writeFileSync(this.path.fullchain, cert);
 
-    return { success: `Successfully generated certificate for ${this.proxy.domain}` };
+    // Get the certificate expiration date
+    const certData = acme.crypto.readCertificateInfo(cert);
+
+    return { success: `Successfully generated certificate for ${this.proxy.domain}`, certDate: certData.notAfter };
   };
 
   cleanup(wellknown) {
@@ -197,8 +209,8 @@ export class LibSSL {
 
   // Main function to check, generate and renew certificate
   async generate() {
-    const { days, expired } = this.expiring()
-    return expired ? this.order() : { success: `Certificate for ${this.proxy.domain} still valid for ${Math.floor(days)} days` };
+    const { days, certDate, expired } = this.expiring();
+    return expired ? this.order() : { success: `Certificate for ${this.proxy.domain} still valid for ${Math.floor(days)} days`, certDate };
   }
 
 }

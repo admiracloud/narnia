@@ -1,21 +1,21 @@
 const list_columns = {
   domain: 'DOMAIN',
-  template: 'TEMPLATE',
   state: 'STATE',
   address: 'PROXY ADDRESS',
   certificate: 'CERTIFICATE',
   keepalive: 'KEEPALIVE',
-  additional: 'ADDITIONAL DOMAINS'
+  additional: 'ADDITIONAL DOMAINS',
+  template: 'TEMPLATE',
 }
 
 const length = {
   domain: 6,
-  template: 8,
   state: 6,
   address: 13,
   certificate: 11,
   keepalive: 9,
-  additional: 18
+  additional: 18,
+  template: 8,
 }
 
 const pad   = 4
@@ -34,7 +34,7 @@ export const list_table = function ( proxies ) {
         proxy[column] = proxy[column].join(', ')
 
       // Convert column value to string, in case it's a number
-      proxy[column] = '' + proxy[column]
+      proxy[column] = '' + (proxy[column] || '')
 
       // Replace certificate boolean
       if ( column == 'certificate' )

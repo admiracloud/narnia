@@ -49,9 +49,6 @@ export class Narnia {
   }
 
   list() {
-    if ( !existsSync(this.config.proxy_dir) )
-      return { error: `Proxy directory ${this.config.proxy_dir} doesn't exist\nRun 'narnia install' to create it` }
-
     this.retrieve()
     utils.list_table(this.proxies)
   }
@@ -213,19 +210,18 @@ export class Narnia {
     )
   }
 
-  async ssl( options ) {
-    const { proxy, path, error } = this.ensure(options, 'ssl')
+  ssl_generate( options, command = 'ssl:generate' ) {
+    let { proxy, path, error } = this.ensure(options, command)
     if ( error ) return { error };
 
-    if ( options.generate ) {
-      const staging = !!options?.staging;
-      return this.ssl_generate(path, proxy, staging)
-    }
-
-    return { error: `Missing or invalid option for 'narnia ssl ${proxy.domain}'` }
+    return this.ssl_single( proxy, path );
   }
 
-  async ssl_generate( path, proxy, staging ) {
+  async ssl_single( proxy, path ) {
+    if (!path) path = this.config.proxy_dir + proxy.domain;
+
+    const staging = !!options?.staging;
+
     // Enable .well-known directory and reload nginx
     let wellknown = true
     this.save( path, proxy, wellknown )
@@ -237,8 +233,9 @@ export class Narnia {
 
     const result = await libssl.generate( staging )
 
-    if ( !staging && result.success )
-      proxy.certificate = true
+    if ( !staging && result.success ) {
+      proxy.certificate = result.certDate.getTime();
+    }
 
     // Disable .well-known directory and reload nginx
     wellknown = false
@@ -246,6 +243,87 @@ export class Narnia {
     this.reload()
 
     return result;
+  }
+
+  async ssl_renew ( options ) {
+    // 1. Single proxy renew
+
+    if (options.name)
+      return this.ssl_generate(options, 'ssl:renew')
+
+    // 2. All proxies renew
+    
+    // Retrieve and populate this.proxies
+    this.retrieve()
+
+    // Renew each one sequentially, to avoid being blocked
+    // by Let's Encrypt servers
+    for ( const proxy in this.proxies ) {
+      // Skip if there is no certificate
+      if (proxy.certificate == false) {
+        console.log( `[Skip]: Proxy ${domain} with SSL not enabled` )
+        continue;
+      }
+
+      // Ask for renew if there is a certificate
+      const response = await this.ssl_single(proxy)
+      this.print_response(response)
+    }
+
+    return { success: 'SSL renew operation concluded' }
+  }
+
+  async ssl_check() {
+    // Retrieve and populate this.proxies
+    this.retrieve()
+
+    // Iterate, ensuring the certificate expiration date is added when missing
+    // for retro-compatibility
+    Object.entries(this.proxies).forEach(this.ensure_ssl_date)
+
+    return { success: 'SSL check operation concluded' }
+  }
+
+  ensure_ssl_date( domain ) {
+    const proxy = this.proxies[domain];
+
+    // Skip if there is no certificate
+    if (proxy.certificate == false) {
+      console.log( `[Skip]: Proxy ${domain} with SSL not enabled` )
+      return;
+    }
+
+    // Skip if timestamp is already there
+    if (utils.isValidTimestamp(proxy.certificate)) {
+      console.log( `[OK]: Proxy ${domain} already with certificate expiration` )
+      return;
+    }
+
+    // If there is a certificate but not a valid timestamp,
+    // this is probably a proxy from an old version of narnia
+    // Let's update it!
+
+    const libssl = new LibSSL(this.config, proxy);
+    const path  = this.config.proxy_dir + domain;
+
+    // If there is no certificate file, well, then we consider this proxy as
+    // certificate-less as a safe measure
+    if (!libssl.certExists()) {
+      proxy.certificate = false;
+      console.log( `[Change]: No certificate found on proxy ${domain}` )
+    }
+    // Otherwise, victory! The proxy now has a valid timestamp and can be
+    // updated!
+    else {
+      proxy.certificate = libssl.certDate().certDate.getTime()
+      console.log( `[Change]: Proxy ${domain} certificate expiration checked` )
+    }
+
+    // Save the changes
+    const wellknown = false;
+    this.save( path, proxy, wellknown );
+    
+    return;
   }
 
   reload() {
@@ -279,6 +357,23 @@ export class Narnia {
     if ( !existsSync(path) ) return { error: `Proxy ${options.name} doesn't exist` }
 
     return { proxy: JSON.parse(readFileSync(path, 'utf8')), path }
+  }
+
+  ensure_config() {
+    let response = { error: null }
+
+    if ( !existsSync(this.config.proxy_dir) )
+      response.error = `Proxy directory ${this.config.proxy_dir} doesn't exist\nRun 'narnia install' to create it`;
+
+    return response;
+  }
+
+  print_response(response) {
+    if ( response?.error )
+      console.log( 'Error: ' + response.error )
+
+    if ( response?.success )
+      console.log( response.success )
   }
 
 }

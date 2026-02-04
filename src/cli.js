@@ -12,19 +12,19 @@ const command = mri( process.argv.slice( 2 ), {
 });
 
 if ( command.help || ( process.argv.length <= 2 && process.stdin.isTTY ) ) {
-  console.log( 'Narnia version ' + '0.2.2' )
+  console.log( 'Narnia version ' + '0.4.0' )
   console.log( 'Narnia proxy manager help text go here' )
   process.exit()
 }
 
 if ( command.version ) {
-  console.log( 'Narnia version ' + '0.2.2' )
+  console.log( 'Narnia version ' + '0.4.0' )
   process.exit()
 }
 
 const config = readConf()
 const narnia = new Narnia( config )
-const mode   = command[ '_' ][ 0 ]
+const mode   = command[ '_' ][ 0 ].replace(':', '_')
 
 if ( typeof narnia[mode] != 'function' ) {
   console.log( `Invalid command 'narnia ${mode}'` )
@@ -35,10 +35,15 @@ if ( typeof narnia[mode] != 'function' ) {
 if ( command[ '_' ].length > 1 )
   command.name = command[ '_' ][ 1 ]
 
-const response = await narnia[mode](command)
+// Ensure installation and config directory
+let response = await narnia.ensure_config()
 
-if ( response?.error )
+if ( response?.error ) {
   console.log( 'Error: ' + response.error )
+  process.exit()
+}
 
-if ( response?.success )
-  console.log( response.success )
+// Call command
+response = await narnia[mode](command)
+narnia.print_response(response)
+process.exit()
