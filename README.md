@@ -88,14 +88,27 @@ Deletes a proxy configuration and removes it from Nginx.
 ### SSL Certificate Management
 
 ```bash
-narnia ssl <name> --generate [--staging]
+narnia ssl:generate <name> [--staging]
 ```
 
 Generates an SSL certificate for the proxy using Let's Encrypt.
 
 - `<name>`: The domain name of the proxy
-- `--generate`: Generate a new certificate
 - `--staging`: (Optional) Use Let's Encrypt staging environment for testing
+
+```bash
+narnia ssl:renew [<name>]
+```
+
+Generates an SSL certificate for the proxy using Let's Encrypt. When `<name>` is not passed, all certificates are renewed when having less than 30 days of expiration.
+
+- `<name>`: (Optional) The domain name of the proxy
+
+```bash
+narnia ssl:check
+```
+
+Checks and updates proxy data when necessary for proxies generated before version 0.4.0.
 
 ### Help and Version
 
