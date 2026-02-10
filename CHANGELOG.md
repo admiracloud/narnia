@@ -1,5 +1,9 @@
 # Alumna changelog
 
+## 0.4.1 - 2026-02-10
+
+* Fixed `narnia install` to not run the check of installation on the `install` command itself
+
 ## 0.4.0 - 2026-02-02
 
 * Check proxies' SSL with `narnia ssl:check`

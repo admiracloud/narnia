@@ -12,13 +12,13 @@ const command = mri( process.argv.slice( 2 ), {
 });
 
 if ( command.help || ( process.argv.length <= 2 && process.stdin.isTTY ) ) {
-  console.log( 'Narnia version ' + '0.4.0' )
+  console.log( 'Narnia version ' + '0.4.1' )
   console.log( 'Narnia proxy manager help text go here' )
   process.exit()
 }
 
 if ( command.version ) {
-  console.log( 'Narnia version ' + '0.4.0' )
+  console.log( 'Narnia version ' + '0.4.1' )
   process.exit()
 }
 
@@ -36,7 +36,7 @@ if ( command[ '_' ].length > 1 )
   command.name = command[ '_' ][ 1 ]
 
 // Ensure installation and config directory
-let response = await narnia.ensure_config()
+let response = await ( mode != 'install' ? narnia.ensure_config() : null );
 
 if ( response?.error ) {
   console.log( 'Error: ' + response.error )

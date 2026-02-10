@@ -42,7 +42,7 @@ export class Narnia {
   }
 
   install() {
-    const dirs = ['data_dir', 'proxy_dir', 'public', 'certs_dir', 'letsencrypt', 'challenge']
+    const dirs = ['data_dir', 'proxy_dir', 'public', 'certs_dir', 'letsencrypt', 'challenge', 'sites_available', 'sites_enabled']
 
     for ( const dir of dirs )
       mkdirSync(this.config[dir], { recursive: true })
