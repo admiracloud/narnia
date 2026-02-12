@@ -1,5 +1,9 @@
 # Alumna changelog
 
+## 0.4.2 - 2026.02-12
+
+* Updated dependencies, including `axios` which presented a vulnerability
+
 ## 0.4.1 - 2026-02-10
 
 * Fixed `narnia install` to not run the check of installation on the `install` command itself
