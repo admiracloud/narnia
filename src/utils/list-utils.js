@@ -1,8 +1,11 @@
+import { isValidTimestamp } from '#utils/time.js';
+
 const list_columns = {
   domain: 'DOMAIN',
   state: 'STATE',
   address: 'PROXY ADDRESS',
   certificate: 'CERTIFICATE',
+  auto_renew: 'AUTO RENEW',
   keepalive: 'KEEPALIVE',
   additional: 'ADDITIONAL DOMAINS',
   template: 'TEMPLATE',
@@ -13,6 +16,7 @@ const length = {
   state: 6,
   address: 13,
   certificate: 11,
+  auto_renew: 10,
   keepalive: 9,
   additional: 18,
   template: 8,
@@ -20,6 +24,28 @@ const length = {
 
 const pad   = 4
 const stdout = process.stdout
+
+const process_cert = function ( cert ) {
+  cert = +cert;
+
+  if (isValidTimestamp(cert))
+    return (new Date(cert)).toISOString().slice(0, 16).replace('T', ' ');
+
+  return ( cert === true || cert === 'true' ) ? 'enabled' : ''
+}
+
+const process_auto_renew = function ( auto_renew ) {
+  switch (auto_renew) {
+    case null:
+      return '';
+    case true:
+    case 'true':
+      return 'on';
+    case false:
+    case 'false':
+      return 'off';
+  }
+}
 
 export const list_table = function ( proxies ) {
   const columns = Object.keys( list_columns )
@@ -33,13 +59,17 @@ export const list_table = function ( proxies ) {
       if ( Array.isArray(proxy[column]) )
         proxy[column] = proxy[column].join(', ')
 
-      // Convert column value to string, in case it's a number
-      proxy[column] = '' + (proxy[column] || '')
-
       // Replace certificate boolean
       if ( column == 'certificate' )
-        proxy[column] = ( proxy[column] === true || proxy[column] === 'true' ) ? 'enabled' : ''
+        proxy[column] = process_cert(proxy[column])
 
+      // Certificate auto renew
+      if ( column == 'auto_renew' )
+        proxy[column] = process_auto_renew(proxy[column])
+
+      // Convert column value to string, in case it's a number
+      proxy[column] = '' + (proxy[column] || '')
+      
       // Replace keepalive with empty string when 0
       if ( column == 'keepalive' )
         proxy[column] = ( proxy[column] == '0' || !proxy[column] ) ? '' : proxy[column]

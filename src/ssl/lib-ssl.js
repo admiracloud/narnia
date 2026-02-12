@@ -89,7 +89,7 @@ export class LibSSL {
     return {
       certDate: cert.notAfter,
       days: remaining_days,
-      expired: certDate.days < this.expire_days
+      expired: remaining_days < this.expire_days
     }
   }
   

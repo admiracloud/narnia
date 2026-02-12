@@ -5,3 +5,7 @@ export function isValidTimestamp(value) {
   
   return !isNaN(date.getTime()) && date.getTime() === value;
 }
+
+export function delay(time) {
+  return new Promise(resolve => setTimeout(resolve, time));
+}

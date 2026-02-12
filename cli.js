@@ -137,11 +137,24 @@ function mri (args, opts) {
 	return out;
 }
 
+function isValidTimestamp(value) {
+  if (!Number.isInteger(value)) return false;
+
+  const date = new Date(value);
+  
+  return !isNaN(date.getTime()) && date.getTime() === value;
+}
+
+function delay(time) {
+  return new Promise(resolve => setTimeout(resolve, time));
+}
+
 const list_columns = {
   domain: 'DOMAIN',
   state: 'STATE',
   address: 'PROXY ADDRESS',
   certificate: 'CERTIFICATE',
+  auto_renew: 'AUTO RENEW',
   keepalive: 'KEEPALIVE',
   additional: 'ADDITIONAL DOMAINS',
   template: 'TEMPLATE',
@@ -152,6 +165,7 @@ const length = {
   state: 6,
   address: 13,
   certificate: 11,
+  auto_renew: 10,
   keepalive: 9,
   additional: 18,
   template: 8,
@@ -159,6 +173,28 @@ const length = {
 
 const pad   = 4;
 const stdout = process.stdout;
+
+const process_cert = function ( cert ) {
+  cert = +cert;
+
+  if (isValidTimestamp(cert))
+    return (new Date(cert)).toISOString().slice(0, 16).replace('T', ' ');
+
+  return ( cert === true || cert === 'true' ) ? 'enabled' : ''
+};
+
+const process_auto_renew = function ( auto_renew ) {
+  switch (auto_renew) {
+    case null:
+      return '';
+    case true:
+    case 'true':
+      return 'on';
+    case false:
+    case 'false':
+      return 'off';
+  }
+};
 
 const list_table = function ( proxies ) {
   const columns = Object.keys( list_columns );
@@ -172,13 +208,17 @@ const list_table = function ( proxies ) {
       if ( Array.isArray(proxy[column]) )
         proxy[column] = proxy[column].join(', ');
 
-      // Convert column value to string, in case it's a number
-      proxy[column] = '' + (proxy[column] || '');
-
       // Replace certificate boolean
       if ( column == 'certificate' )
-        proxy[column] = ( proxy[column] === true || proxy[column] === 'true' ) ? 'enabled' : '';
+        proxy[column] = process_cert(proxy[column]);
 
+      // Certificate auto renew
+      if ( column == 'auto_renew' )
+        proxy[column] = process_auto_renew(proxy[column]);
+
+      // Convert column value to string, in case it's a number
+      proxy[column] = '' + (proxy[column] || '');
+      
       // Replace keepalive with empty string when 0
       if ( column == 'keepalive' )
         proxy[column] = ( proxy[column] == '0' || !proxy[column] ) ? '' : proxy[column];
@@ -227,14 +267,6 @@ function parseUrl(input) {
 function titleCase(input) {
   input = input.trim().toLowerCase();
   return input.charAt(0).toUpperCase() + input.slice(1);
-}
-
-function isValidTimestamp(value) {
-  if (!Number.isInteger(value)) return false;
-
-  const date = new Date(value);
-  
-  return !isNaN(date.getTime()) && date.getTime() === value;
 }
 
 class StandardTemplate {
@@ -66267,7 +66299,7 @@ class LibSSL {
     return {
       certDate: cert.notAfter,
       days: remaining_days,
-      expired: certDate.days < this.expire_days
+      expired: remaining_days < this.expire_days
     }
   }
   
@@ -66449,7 +66481,12 @@ class Narnia {
       if (proxy.startsWith('.'))
         continue;
 
-      this.proxies[proxy] = JSON.parse(readFileSync(this.config.proxy_dir + proxy, 'utf8'));
+      // Skip invalid proxy files
+      const proxy_content = JSON.parse(readFileSync(this.config.proxy_dir + proxy, 'utf8'));
+      if (typeof proxy_content !== 'object' || !proxy_content.domain)
+        continue;
+
+      this.proxies[proxy] = proxy_content;
     }
   }
 
@@ -66480,6 +66517,7 @@ class Narnia {
       state: 'disabled',
       address: `${address.protocol}://${address.host}:${address.port}`,
       certificate: false,
+      auto_renew: null,
       keepalive: Number.isInteger(options.keepalive) ? '' + options.keepalive : this.config.keepalive,
       additional: options.additional
         ? options.additional.split(',').map(d => d.trim())
@@ -66510,6 +66548,22 @@ class Narnia {
       proxy.keepalive = '' + options.keepalive;
     }
 
+    // Auto renew
+    if ( options['auto-renew']) {
+      const auto_renew = options['auto-renew'] + '';
+
+      const cases = {
+        'null': null,
+        'true': true,
+        'false': false,
+        'on': true,
+        'off': false
+      };
+
+      if (Object.hasOwn(cases, auto_renew))
+        proxy.auto_renew = cases[auto_renew];
+    }
+
     // Additional
     if ( options.additional ) {
       proxy.additional = options.additional.split(',').map(d => d.trim());
@@ -66521,6 +66575,7 @@ class Narnia {
       proxy.additional = Array.from(new Set(proxy.additional.concat(additional)));
     }
 
+    // Set template
     if ( options.template ) {
       // Prepare template name in Title Case
       options.template = titleCase(options.template);
@@ -66530,6 +66585,8 @@ class Narnia {
         const available_templates = Object.keys(templates).join(', ');
         return { error: `Invalid template "${options.template.toLowerCase()}". Available templates: ${available_templates}` }
       }
+
+      proxy.template = options.template;
     }
 
     // Update proxy configuration
@@ -66602,10 +66659,10 @@ class Narnia {
     let { proxy, path, error } = this.ensure(options, command);
     if ( error ) return { error };
 
-    return this.ssl_single( proxy, path );
+    return this.ssl_single( proxy, path, options );
   }
 
-  async ssl_single( proxy, path ) {
+  async ssl_single( proxy, path, options ) {
     if (!path) path = this.config.proxy_dir + proxy.domain;
 
     const staging = !!options?.staging;
@@ -66623,6 +66680,9 @@ class Narnia {
 
     if ( !staging && result.success ) {
       proxy.certificate = result.certDate.getTime();
+
+      // Set auto renew to true if not explicitly defined
+      proxy.auto_renew = ( proxy.auto_renew == null ) ? true : false;
     }
 
     // Disable .well-known directory and reload nginx
@@ -66646,16 +66706,25 @@ class Narnia {
 
     // Renew each one sequentially, to avoid being blocked
     // by Let's Encrypt servers
-    for ( const proxy in this.proxies ) {
+    for ( const domain in this.proxies ) {
+      let proxy = this.proxies[domain];
+
       // Skip if there is no certificate
       if (proxy.certificate == false) {
         console.log( `[Skip]: Proxy ${domain} with SSL not enabled` );
         continue;
       }
 
+      // Skip if there is no certificate
+      if (proxy.auto_renew == false) {
+        console.log( `[Skip]: Auto renew disabled for ${domain}` );
+        continue;
+      }
+
       // Ask for renew if there is a certificate
-      const response = await this.ssl_single(proxy);
+      const response = await this.ssl_single(proxy, null, options);
       this.print_response(response);
+      await delay(1200);
     }
 
     return { success: 'SSL renew operation concluded' }
@@ -66667,7 +66736,7 @@ class Narnia {
 
     // Iterate, ensuring the certificate expiration date is added when missing
     // for retro-compatibility
-    Object.entries(this.proxies).forEach(this.ensure_ssl_date);
+    Object.keys(this.proxies).forEach(this.ensure_ssl_date.bind(this));
 
     return { success: 'SSL check operation concluded' }
   }
