@@ -1,5 +1,10 @@
 # Alumna changelog
 
+## 0.4.3 - 2026.02-13
+
+* Skip disabled proxies when generating or renewing their certificate
+* Fixed how "auto renew" is activated when it was not defined before
+
 ## 0.4.2 - 2026.02-12
 
 * Updated dependencies, including `axios` which presented a vulnerability

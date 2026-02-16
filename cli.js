@@ -66732,6 +66732,9 @@ class Narnia {
     let { proxy, path, error } = this.ensure(options, command);
     if ( error ) return { error };
 
+    if ( proxy.state == 'disabled' )
+      return { error: `First enable proxy ${options.name} to generate/renew its SSL` }
+
     return this.ssl_single( proxy, path, options );
   }
 
@@ -66755,7 +66758,7 @@ class Narnia {
       proxy.certificate = result.certDate.getTime();
 
       // Set auto renew to true if not explicitly defined
-      proxy.auto_renew = ( proxy.auto_renew == null ) ? true : false;
+      proxy.auto_renew = ( proxy.auto_renew == null ) ? true : proxy.auto_renew;
     }
 
     // Disable .well-known directory and reload nginx
@@ -66781,6 +66784,12 @@ class Narnia {
     // by Let's Encrypt servers
     for ( const domain in this.proxies ) {
       let proxy = this.proxies[domain];
+
+      // Skip if disabled
+      if ( proxy.state == 'disabled' ) {
+        console.log( `[Skip]: Proxy ${domain} is disabled` );
+        continue;
+      }
 
       // Skip if there is no certificate
       if (proxy.certificate == false) {
@@ -66959,13 +66968,13 @@ const command = mri( process.argv.slice( 2 ), {
 });
 
 if ( command.help || ( process.argv.length <= 2 && process.stdin.isTTY ) ) {
-  console.log( 'Narnia version ' + '0.4.2' );
+  console.log( 'Narnia version ' + '0.4.3' );
   console.log( 'Narnia proxy manager help text go here' );
   process.exit();
 }
 
 if ( command.version ) {
-  console.log( 'Narnia version ' + '0.4.2' );
+  console.log( 'Narnia version ' + '0.4.3' );
   process.exit();
 }
 
