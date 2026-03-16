@@ -1,5 +1,9 @@
 # Alumna changelog
 
+## 0.4.4 - 2026.03-16
+
+* Do not print a certificate timestamp when it is `false`
+
 ## 0.4.3 - 2026.02-13
 
 * Skip disabled proxies when generating or renewing their certificate

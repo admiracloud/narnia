@@ -175,12 +175,20 @@ const pad   = 4;
 const stdout = process.stdout;
 
 const process_cert = function ( cert ) {
+  // Disabled
+  if ( cert === false || cert === 'false' )  return '';
+
+  // Enabled on old versions
+  if ( cert === true || cert === 'true' )  return 'enabled';
+
+  // Certificate timestamp
   cert = +cert;
 
   if (isValidTimestamp(cert))
     return (new Date(cert)).toISOString().slice(0, 16).replace('T', ' ');
 
-  return ( cert === true || cert === 'true' ) ? 'enabled' : ''
+  // Safe fallback
+  return ''
 };
 
 const process_auto_renew = function ( auto_renew ) {
@@ -66968,13 +66976,13 @@ const command = mri( process.argv.slice( 2 ), {
 });
 
 if ( command.help || ( process.argv.length <= 2 && process.stdin.isTTY ) ) {
-  console.log( 'Narnia version ' + '0.4.3' );
+  console.log( 'Narnia version ' + '0.4.4' );
   console.log( 'Narnia proxy manager help text go here' );
   process.exit();
 }
 
 if ( command.version ) {
-  console.log( 'Narnia version ' + '0.4.3' );
+  console.log( 'Narnia version ' + '0.4.4' );
   process.exit();
 }
 
