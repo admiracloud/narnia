@@ -1,6 +1,6 @@
 {
   "name": "narnia",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "description": "Nginx proxy manager and Let's Encrypt SSL certificate manager in pure Javascript",
   "main": "cli.js",
   "type": "module",

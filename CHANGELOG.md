@@ -1,5 +1,10 @@
 # Alumna changelog
 
+## 0.4.5 - 2026.03-28
+
+* Updated proxy templates for better transparency proxying
+* Added Nginx config recommendations for transparency proxying
+
 ## 0.4.4 - 2026.03-16
 
 * Do not print a certificate timestamp when it is `false`
