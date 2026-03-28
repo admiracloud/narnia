@@ -1,5 +1,9 @@
 # Alumna changelog
 
+## 0.4.6 - 2026.03-28
+
+* Fixed proxy headers behavior with centralized `proxy-headers.conf`
+
 ## 0.4.5 - 2026.03-28
 
 * Updated proxy templates for better transparency proxying

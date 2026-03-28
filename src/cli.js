@@ -12,13 +12,13 @@ const command = mri( process.argv.slice( 2 ), {
 });
 
 if ( command.help || ( process.argv.length <= 2 && process.stdin.isTTY ) ) {
-  console.log( 'Narnia version ' + '0.4.5' )
+  console.log( 'Narnia version ' + '0.4.6' )
   console.log( 'Narnia proxy manager help text go here' )
   process.exit()
 }
 
 if ( command.version ) {
-  console.log( 'Narnia version ' + '0.4.5' )
+  console.log( 'Narnia version ' + '0.4.6' )
   process.exit()
 }
 

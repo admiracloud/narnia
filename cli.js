@@ -358,9 +358,8 @@ class StandardTemplate {
 	proxy_location = () =>
 
 		`location / {
+			include              proxy-headers.conf;
 			proxy_pass           ${this.proxy_pass};
-			proxy_set_header     Upgrade $http_upgrade;
-			proxy_set_header     Connection $connection_upgrade;
 			client_max_body_size 512M;
 		}`
 
@@ -463,9 +462,8 @@ class VirtualminTemplate {
 	proxy_location = () =>
 
 		`location / {
+			include              proxy-headers.conf;
 			proxy_pass           ${this.proxy_pass};
-			proxy_set_header     Upgrade $http_upgrade;
-			proxy_set_header     Connection $connection_upgrade;
 			client_max_body_size 512M;
 		}`
 
@@ -66966,13 +66964,13 @@ const command = mri( process.argv.slice( 2 ), {
 });
 
 if ( command.help || ( process.argv.length <= 2 && process.stdin.isTTY ) ) {
-  console.log( 'Narnia version ' + '0.4.5' );
+  console.log( 'Narnia version ' + '0.4.6' );
   console.log( 'Narnia proxy manager help text go here' );
   process.exit();
 }
 
 if ( command.version ) {
-  console.log( 'Narnia version ' + '0.4.5' );
+  console.log( 'Narnia version ' + '0.4.6' );
   process.exit();
 }
 
