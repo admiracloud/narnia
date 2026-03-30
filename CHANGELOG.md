@@ -1,5 +1,9 @@
 # Alumna changelog
 
+## 0.4.7 - 2026.03-30
+
+* Dependencies update
+
 ## 0.4.6 - 2026.03-28
 
 * Fixed proxy headers behavior with centralized `proxy-headers.conf`
