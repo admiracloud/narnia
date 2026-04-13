@@ -1,28 +1,32 @@
 # Alumna changelog
 
-## 0.4.7 - 2026.03-30
+## 0.4.8 - 2026-04-13
 
 * Dependencies update
 
-## 0.4.6 - 2026.03-28
+## 0.4.7 - 2026-03-30
+
+* Dependencies update
+
+## 0.4.6 - 2026-03-28
 
 * Fixed proxy headers behavior with centralized `proxy-headers.conf`
 
-## 0.4.5 - 2026.03-28
+## 0.4.5 - 2026-03-28
 
 * Updated proxy templates for better transparency proxying
 * Added Nginx config recommendations for transparency proxying
 
-## 0.4.4 - 2026.03-16
+## 0.4.4 - 2026-03-16
 
 * Do not print a certificate timestamp when it is `false`
 
-## 0.4.3 - 2026.02-13
+## 0.4.3 - 2026-02-13
 
 * Skip disabled proxies when generating or renewing their certificate
 * Fixed how "auto renew" is activated when it was not defined before
 
-## 0.4.2 - 2026.02-12
+## 0.4.2 - 2026-02-12
 
 * Updated dependencies, including `axios` which presented a vulnerability
 
