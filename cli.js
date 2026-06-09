@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import require$$6, { mkdirSync, existsSync, writeFileSync, readFileSync, rmSync, readdirSync } from 'fs';
 import { execSync } from 'child_process';
-import url, { parse, resolve } from 'url';
+import require$$2, { parse, resolve } from 'url';
 import require$$1$1 from 'path';
 import require$$4$1, { request } from 'https';
 import require$$3$2, { globalAgent } from 'http';
@@ -10,12 +10,12 @@ import require$$0$2 from 'net';
 import require$$1 from 'util';
 import require$$0$3 from 'tty';
 import require$$0$4 from 'stream';
-import require$$5 from 'http2';
-import require$$4$2 from 'assert';
-import require$$8 from 'zlib';
-import require$$10 from 'events';
-import require$$0$5 from 'tls';
-import require$$1$2 from 'dns';
+import require$$1$2 from 'tls';
+import require$$3$3 from 'assert';
+import require$$0$5 from 'events';
+import require$$6$1 from 'http2';
+import require$$10 from 'zlib';
+import require$$1$3 from 'dns';
 
 function toArr(any) {
 	return any == null ? [] : Array.isArray(any) ? any : [any];
@@ -261,7 +261,7 @@ function parseUrl(input) {
     input = 'http://' + input;
   }
 
-  const parsed = url.parse(input);
+  const parsed = require$$2.parse(input);
 
   const response = {};
 
@@ -571,7 +571,7 @@ function getAugmentedNamespace(n) {
 			var isInstance = false;
       try {
         isInstance = this instanceof a;
-      } catch {}
+      } catch (e) {}
 			if (isInstance) {
         return Reflect.construct(f, arguments, this.constructor);
 			}
@@ -592,7 +592,7 @@ function getAugmentedNamespace(n) {
 	return a;
 }
 
-var src$1 = {};
+var src$2 = {};
 
 var crypto$1 = {};
 
@@ -1244,7 +1244,7 @@ function HexBlock(BaseClass) {
                 this.isHexOnly = (_b = params.isHexOnly) !== null && _b !== void 0 ? _b : false;
                 this.valueHexView = params.valueHex ? BufferSourceConverter.toUint8Array(params.valueHex) : EMPTY_VIEW;
             }
-            fromBER(inputBuffer, inputOffset, inputLength) {
+            fromBER(inputBuffer, inputOffset, inputLength, _context) {
                 const view = inputBuffer instanceof ArrayBuffer ? new Uint8Array(inputBuffer) : inputBuffer;
                 if (!checkBufferParams(this, view, inputOffset, inputLength)) {
                     return -1;
@@ -1311,7 +1311,7 @@ class LocalBaseBlock {
 LocalBaseBlock.NAME = "baseBlock";
 
 class ValueBlock extends LocalBaseBlock {
-    fromBER(_inputBuffer, _inputOffset, _inputLength) {
+    fromBER(_inputBuffer, _inputOffset, _inputLength, _context) {
         throw TypeError("User need to make a specific function in a class which extends 'ValueBlock'");
     }
     toBER(_sizeOnly, _writer) {
@@ -1429,31 +1429,21 @@ class LocalIdentificationBlock extends HexBlock(LocalBaseBlock) {
             this.blockLength = 1;
         }
         else {
-            let count = 1;
-            let intTagNumberBuffer = this.valueHexView = new Uint8Array(255);
-            let tagNumberBufferMaxLength = 255;
-            while (intBuffer[count] & 0x80) {
-                intTagNumberBuffer[count - 1] = intBuffer[count] & 0x7F;
-                count++;
-                if (count >= intBuffer.length) {
+            let count = 0;
+            while (true) {
+                const tagByteIndex = count + 1;
+                if (tagByteIndex >= intBuffer.length) {
                     this.error = "End of input reached before message was fully decoded";
                     return -1;
                 }
-                if (count === tagNumberBufferMaxLength) {
-                    tagNumberBufferMaxLength += 255;
-                    const tempBufferView = new Uint8Array(tagNumberBufferMaxLength);
-                    for (let i = 0; i < intTagNumberBuffer.length; i++)
-                        tempBufferView[i] = intTagNumberBuffer[i];
-                    intTagNumberBuffer = this.valueHexView = new Uint8Array(tagNumberBufferMaxLength);
-                }
+                count++;
+                if ((intBuffer[tagByteIndex] & 0x80) === 0x00)
+                    break;
             }
             this.blockLength = (count + 1);
-            intTagNumberBuffer[count - 1] = intBuffer[count] & 0x7F;
-            const tempBufferView = new Uint8Array(count);
+            const intTagNumberBuffer = this.valueHexView = new Uint8Array(count);
             for (let i = 0; i < count; i++)
-                tempBufferView[i] = intTagNumberBuffer[i];
-            intTagNumberBuffer = this.valueHexView = new Uint8Array(count);
-            intTagNumberBuffer.set(tempBufferView);
+                intTagNumberBuffer[i] = intBuffer[i + 1] & 0x7F;
             if (this.blockLength <= 9)
                 this.tagNumber = utilFromBase(intTagNumberBuffer, 7);
             else {
@@ -1607,10 +1597,10 @@ class BaseBlock extends LocalBaseBlock {
         this.lenBlock = new LocalLengthBlock(parameters);
         this.valueBlock = valueBlockType ? new valueBlockType(parameters) : new ValueBlock(parameters);
     }
-    fromBER(inputBuffer, inputOffset, inputLength) {
+    fromBER(inputBuffer, inputOffset, inputLength, context) {
         const resultOffset = this.valueBlock.fromBER(inputBuffer, inputOffset, (this.lenBlock.isIndefiniteForm)
             ? inputLength
-            : this.lenBlock.length);
+            : this.lenBlock.length, context);
         if (resultOffset === -1) {
             this.error = this.valueBlock.error;
             return resultOffset;
@@ -1753,6 +1743,56 @@ _a$w = Primitive;
 })();
 Primitive.NAME = "PRIMITIVE";
 
+const DEFAULT_MAX_DEPTH = 100;
+const DEFAULT_MAX_NODES = 10000;
+const DEFAULT_MAX_CONTENT_LENGTH = 16 * 1024 * 1024;
+const MAX_DEPTH_EXCEEDED_ERROR = "Maximum ASN.1 nesting depth exceeded";
+const MAX_NODES_EXCEEDED_ERROR = "Maximum ASN.1 node count exceeded";
+const MAX_CONTENT_LENGTH_EXCEEDED_ERROR = "Maximum ASN.1 content length exceeded";
+function createFromBerContext(options = {}) {
+    var _a, _b, _c;
+    return {
+        depth: 0,
+        maxDepth: (_a = options.maxDepth) !== null && _a !== void 0 ? _a : DEFAULT_MAX_DEPTH,
+        nodesCount: 0,
+        maxNodes: (_b = options.maxNodes) !== null && _b !== void 0 ? _b : DEFAULT_MAX_NODES,
+        maxContentLength: (_c = options.maxContentLength) !== null && _c !== void 0 ? _c : DEFAULT_MAX_CONTENT_LENGTH,
+    };
+}
+function createErrorResult(error) {
+    const result = new BaseBlock({}, ValueBlock);
+    result.error = error;
+    return {
+        offset: -1,
+        result,
+    };
+}
+function checkNodesLimit(context) {
+    context.nodesCount += 1;
+    if (context.nodesCount > context.maxNodes) {
+        return MAX_NODES_EXCEEDED_ERROR;
+    }
+    return undefined;
+}
+function checkContentLengthLimit(inputLength, context) {
+    if (inputLength > context.maxContentLength) {
+        return MAX_CONTENT_LENGTH_EXCEEDED_ERROR;
+    }
+    return undefined;
+}
+function localFromBERWithChildContext(inputBuffer, inputOffset, inputLength, context) {
+    const childDepth = context.depth + 1;
+    if (childDepth > context.maxDepth) {
+        return createErrorResult(MAX_DEPTH_EXCEEDED_ERROR);
+    }
+    context.depth = childDepth;
+    try {
+        return localFromBER(inputBuffer, inputOffset, inputLength, context);
+    }
+    finally {
+        context.depth -= 1;
+    }
+}
 function localChangeType(inputObject, newType) {
     if (inputObject instanceof newType) {
         return inputObject;
@@ -1764,7 +1804,7 @@ function localChangeType(inputObject, newType) {
     newObject.valueBeforeDecodeView = inputObject.valueBeforeDecodeView;
     return newObject;
 }
-function localFromBER(inputBuffer, inputOffset = 0, inputLength = inputBuffer.length) {
+function localFromBER(inputBuffer, inputOffset = 0, inputLength = inputBuffer.length, context = createFromBerContext()) {
     const incomingOffset = inputOffset;
     let returnObject = new BaseBlock({}, ValueBlock);
     const baseBlock = new LocalBaseBlock();
@@ -1778,6 +1818,14 @@ function localFromBER(inputBuffer, inputOffset = 0, inputLength = inputBuffer.le
     const intBuffer = inputBuffer.subarray(inputOffset, inputOffset + inputLength);
     if (!intBuffer.length) {
         returnObject.error = "Zero buffer length";
+        return {
+            offset: -1,
+            result: returnObject,
+        };
+    }
+    const nodesLimitError = checkNodesLimit(context);
+    if (nodesLimitError) {
+        returnObject.error = nodesLimitError;
         return {
             offset: -1,
             result: returnObject,
@@ -1809,6 +1857,15 @@ function localFromBER(inputBuffer, inputOffset = 0, inputLength = inputBuffer.le
     }
     inputOffset = resultOffset;
     inputLength -= returnObject.lenBlock.blockLength;
+    const valueLength = returnObject.lenBlock.isIndefiniteForm ? inputLength : returnObject.lenBlock.length;
+    const contentLengthError = checkContentLengthLimit(valueLength, context);
+    if (contentLengthError) {
+        returnObject.error = contentLengthError;
+        return {
+            offset: -1,
+            result: returnObject,
+        };
+    }
     if (!returnObject.idBlock.isConstructed
         && returnObject.lenBlock.isIndefiniteForm) {
         returnObject.error = "Indefinite length form used for primitive encoding form";
@@ -1954,14 +2011,14 @@ function localFromBER(inputBuffer, inputOffset = 0, inputLength = inputBuffer.le
         }
     }
     returnObject = localChangeType(returnObject, newASN1Type);
-    resultOffset = returnObject.fromBER(inputBuffer, inputOffset, returnObject.lenBlock.isIndefiniteForm ? inputLength : returnObject.lenBlock.length);
+    resultOffset = returnObject.fromBER(inputBuffer, inputOffset, valueLength, context);
     returnObject.valueBeforeDecodeView = inputBuffer.subarray(incomingOffset, incomingOffset + returnObject.blockLength);
     return {
         offset: resultOffset,
         result: returnObject,
     };
 }
-function fromBER(inputBuffer) {
+function fromBER(inputBuffer, options = {}) {
     if (!inputBuffer.byteLength) {
         const result = new BaseBlock({}, ValueBlock);
         result.error = "Input buffer has zero length";
@@ -1970,7 +2027,7 @@ function fromBER(inputBuffer) {
             result,
         };
     }
-    return localFromBER(BufferSourceConverter.toUint8Array(inputBuffer).slice(), 0, inputBuffer.byteLength);
+    return localFromBER(BufferSourceConverter.toUint8Array(inputBuffer).slice(), 0, inputBuffer.byteLength, createFromBerContext(options));
 }
 
 function checkLen(indefiniteLength, length) {
@@ -1985,8 +2042,9 @@ class LocalConstructedValueBlock extends ValueBlock {
         this.value = value;
         this.isIndefiniteForm = isIndefiniteForm;
     }
-    fromBER(inputBuffer, inputOffset, inputLength) {
+    fromBER(inputBuffer, inputOffset, inputLength, context) {
         const view = BufferSourceConverter.toUint8Array(inputBuffer);
+        const parseContext = context !== null && context !== void 0 ? context : createFromBerContext();
         if (!checkBufferParams(this, view, inputOffset, inputLength)) {
             return -1;
         }
@@ -1997,7 +2055,7 @@ class LocalConstructedValueBlock extends ValueBlock {
         }
         let currentOffset = inputOffset;
         while (checkLen(this.isIndefiniteForm, inputLength) > 0) {
-            const returnObject = localFromBER(view, currentOffset, inputLength);
+            const returnObject = localFromBERWithChildContext(view, currentOffset, inputLength, parseContext);
             if (returnObject.offset === -1) {
                 this.error = returnObject.result.error;
                 this.warnings.concat(returnObject.result.warnings);
@@ -2051,9 +2109,9 @@ class Constructed extends BaseBlock {
         super(parameters, LocalConstructedValueBlock);
         this.idBlock.isConstructed = true;
     }
-    fromBER(inputBuffer, inputOffset, inputLength) {
+    fromBER(inputBuffer, inputOffset, inputLength, context) {
         this.valueBlock.isIndefiniteForm = this.lenBlock.isIndefiniteForm;
-        const resultOffset = this.valueBlock.fromBER(inputBuffer, inputOffset, (this.lenBlock.isIndefiniteForm) ? inputLength : this.lenBlock.length);
+        const resultOffset = this.valueBlock.fromBER(inputBuffer, inputOffset, (this.lenBlock.isIndefiniteForm) ? inputLength : this.lenBlock.length, context);
         if (resultOffset === -1) {
             this.error = this.valueBlock.error;
             return resultOffset;
@@ -2229,11 +2287,11 @@ class LocalOctetStringValueBlock extends HexBlock(LocalConstructedValueBlock) {
         super(parameters);
         this.isConstructed = isConstructed;
     }
-    fromBER(inputBuffer, inputOffset, inputLength) {
+    fromBER(inputBuffer, inputOffset, inputLength, context) {
         let resultOffset = 0;
         if (this.isConstructed) {
             this.isHexOnly = false;
-            resultOffset = LocalConstructedValueBlock.prototype.fromBER.call(this, inputBuffer, inputOffset, inputLength);
+            resultOffset = LocalConstructedValueBlock.prototype.fromBER.call(this, inputBuffer, inputOffset, inputLength, context);
             if (resultOffset === -1)
                 return resultOffset;
             for (let i = 0; i < this.value.length; i++) {
@@ -2294,7 +2352,7 @@ let OctetString$1 = class OctetString extends BaseBlock {
         this.idBlock.tagClass = 1;
         this.idBlock.tagNumber = 4;
     }
-    fromBER(inputBuffer, inputOffset, inputLength) {
+    fromBER(inputBuffer, inputOffset, inputLength, context) {
         this.valueBlock.isConstructed = this.idBlock.isConstructed;
         this.valueBlock.isIndefiniteForm = this.lenBlock.isIndefiniteForm;
         if (inputLength === 0) {
@@ -2309,7 +2367,8 @@ let OctetString$1 = class OctetString extends BaseBlock {
             const buf = view.subarray(inputOffset, inputOffset + inputLength);
             try {
                 if (buf.byteLength) {
-                    const asn = localFromBER(buf, 0, buf.byteLength);
+                    const parseContext = context !== null && context !== void 0 ? context : createFromBerContext();
+                    const asn = localFromBERWithChildContext(buf, 0, buf.byteLength, parseContext);
                     if (asn.offset !== -1 && asn.offset === inputLength) {
                         this.valueBlock.value = [asn.result];
                     }
@@ -2318,7 +2377,7 @@ let OctetString$1 = class OctetString extends BaseBlock {
             catch {
             }
         }
-        return super.fromBER(inputBuffer, inputOffset, inputLength);
+        return super.fromBER(inputBuffer, inputOffset, inputLength, context);
     }
     onAsciiEncoding() {
         if (this.valueBlock.isConstructed || (this.valueBlock.value && this.valueBlock.value.length)) {
@@ -2354,13 +2413,13 @@ class LocalBitStringValueBlock extends HexBlock(LocalConstructedValueBlock) {
         this.isConstructed = isConstructed;
         this.blockLength = this.valueHexView.byteLength;
     }
-    fromBER(inputBuffer, inputOffset, inputLength) {
+    fromBER(inputBuffer, inputOffset, inputLength, context) {
         if (!inputLength) {
             return inputOffset;
         }
         let resultOffset = -1;
         if (this.isConstructed) {
-            resultOffset = LocalConstructedValueBlock.prototype.fromBER.call(this, inputBuffer, inputOffset, inputLength);
+            resultOffset = LocalConstructedValueBlock.prototype.fromBER.call(this, inputBuffer, inputOffset, inputLength, context);
             if (resultOffset === -1)
                 return resultOffset;
             for (const value of this.value) {
@@ -2400,7 +2459,8 @@ class LocalBitStringValueBlock extends HexBlock(LocalConstructedValueBlock) {
             const buf = intBuffer.subarray(1);
             try {
                 if (buf.byteLength) {
-                    const asn = localFromBER(buf, 0, buf.byteLength);
+                    const parseContext = context !== null && context !== void 0 ? context : createFromBerContext();
+                    const asn = localFromBERWithChildContext(buf, 0, buf.byteLength, parseContext);
                     if (asn.offset !== -1 && asn.offset === (inputLength - 1)) {
                         this.value = [asn.result];
                     }
@@ -2459,10 +2519,10 @@ let BitString$1 = class BitString extends BaseBlock {
         this.idBlock.tagClass = 1;
         this.idBlock.tagNumber = 3;
     }
-    fromBER(inputBuffer, inputOffset, inputLength) {
+    fromBER(inputBuffer, inputOffset, inputLength, context) {
         this.valueBlock.isConstructed = this.idBlock.isConstructed;
         this.valueBlock.isIndefiniteForm = this.lenBlock.isIndefiniteForm;
-        return super.fromBER(inputBuffer, inputOffset, inputLength);
+        return super.fromBER(inputBuffer, inputOffset, inputLength, context);
     }
     onAsciiEncoding() {
         if (this.valueBlock.isConstructed || (this.valueBlock.value && this.valueBlock.value.length)) {
@@ -4265,6 +4325,9 @@ var asn1js = /*#__PURE__*/Object.freeze({
 	Choice: Choice,
 	Constructed: Constructed,
 	DATE: DATE,
+	DEFAULT_MAX_CONTENT_LENGTH: DEFAULT_MAX_CONTENT_LENGTH,
+	DEFAULT_MAX_DEPTH: DEFAULT_MAX_DEPTH,
+	DEFAULT_MAX_NODES: DEFAULT_MAX_NODES,
 	DateTime: DateTime,
 	Duration: Duration,
 	EndOfContent: EndOfContent,
@@ -5717,6 +5780,74 @@ function require_Reflect () {
 
 require_Reflect();
 
+const ARRAY_BUFFER_TAG = "[object ArrayBuffer]";
+const SHARED_ARRAY_BUFFER_TAG = "[object SharedArrayBuffer]";
+function tagOf(value) {
+    return Object.prototype.toString.call(value);
+}
+function isArrayBufferViewLike(value) {
+    if (ArrayBuffer.isView(value)) {
+        return true;
+    }
+    if (!value || typeof value !== "object") {
+        return false;
+    }
+    const view = value;
+    return typeof view.byteOffset === "number"
+        && typeof view.byteLength === "number"
+        && isArrayBufferLike(view.buffer);
+}
+function isArrayBuffer(value) {
+    return tagOf(value) === ARRAY_BUFFER_TAG;
+}
+function isSharedArrayBuffer(value) {
+    return typeof SharedArrayBuffer !== "undefined" && tagOf(value) === SHARED_ARRAY_BUFFER_TAG;
+}
+function isArrayBufferLike(value) {
+    return isArrayBuffer(value) || isSharedArrayBuffer(value);
+}
+function isArrayBufferView(value) {
+    return isArrayBufferViewLike(value);
+}
+function isBufferSource(value) {
+    return isArrayBufferLike(value) || isArrayBufferView(value);
+}
+function assertBufferSource(value) {
+    if (!isBufferSource(value)) {
+        throw new TypeError("Expected ArrayBuffer, SharedArrayBuffer, or ArrayBufferView");
+    }
+}
+function toUint8Array(data) {
+    assertBufferSource(data);
+    if (isArrayBufferLike(data)) {
+        return new Uint8Array(data);
+    }
+    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+}
+function toArrayBuffer(data) {
+    assertBufferSource(data);
+    if (isArrayBuffer(data)) {
+        return data;
+    }
+    const buffer = new ArrayBuffer(data.byteLength);
+    new Uint8Array(buffer).set(toUint8Array(data));
+    return buffer;
+}
+
+function equal(a, b, options = {}) {
+    const left = toUint8Array(a);
+    const right = toUint8Array(b);
+    if (!options.constantTime && left.byteLength !== right.byteLength) {
+        return false;
+    }
+    const length = Math.max(left.byteLength, right.byteLength);
+    let diff = left.byteLength ^ right.byteLength;
+    for (let i = 0; i < length; i++) {
+        diff |= (left[i] ?? 0) ^ (right[i] ?? 0);
+    }
+    return diff === 0;
+}
+
 var AsnTypeTypes;
 (function (AsnTypeTypes) {
     AsnTypeTypes[AsnTypeTypes["Sequence"] = 0] = "Sequence";
@@ -5755,16 +5886,16 @@ var AsnPropTypes;
 })(AsnPropTypes || (AsnPropTypes = {}));
 
 class BitString {
+    unusedBits = 0;
+    value = new ArrayBuffer(0);
     constructor(params, unusedBits = 0) {
-        this.unusedBits = 0;
-        this.value = new ArrayBuffer(0);
         if (params) {
             if (typeof params === "number") {
                 this.fromNumber(params);
             }
-            else if (BufferSourceConverter.isBufferSource(params)) {
+            else if (isBufferSource(params)) {
                 this.unusedBits = unusedBits;
-                this.value = BufferSourceConverter.toArrayBuffer(params);
+                this.value = toArrayBuffer(params);
             }
             else {
                 throw TypeError("Unsupported type of 'params' argument for BitString");
@@ -5776,11 +5907,13 @@ class BitString {
             throw new TypeError("Argument 'asn' is not instance of ASN.1 BitString");
         }
         this.unusedBits = asn.valueBlock.unusedBits;
-        this.value = asn.valueBlock.valueHex;
+        this.value = toArrayBuffer(asn.valueBlock.valueHex);
         return this;
     }
     toASN() {
-        return new BitString$1({ unusedBits: this.unusedBits, valueHex: this.value });
+        return new BitString$1({
+            unusedBits: this.unusedBits, valueHex: this.value,
+        });
     }
     toSchema(name) {
         return new BitString$1({ name });
@@ -5817,6 +5950,7 @@ class BitString {
 }
 
 class OctetString {
+    buffer;
     get byteLength() {
         return this.buffer.byteLength;
     }
@@ -5828,11 +5962,11 @@ class OctetString {
             this.buffer = new ArrayBuffer(param);
         }
         else {
-            if (BufferSourceConverter.isBufferSource(param)) {
-                this.buffer = BufferSourceConverter.toArrayBuffer(param);
+            if (isBufferSource(param)) {
+                this.buffer = toArrayBuffer(param);
             }
             else if (Array.isArray(param)) {
-                this.buffer = new Uint8Array(param);
+                this.buffer = new Uint8Array(param).buffer;
             }
             else {
                 this.buffer = new ArrayBuffer(0);
@@ -5843,7 +5977,7 @@ class OctetString {
         if (!(asn instanceof OctetString$1)) {
             throw new TypeError("Argument 'asn' is not instance of ASN.1 OctetString");
         }
-        this.buffer = asn.valueBlock.valueHex;
+        this.buffer = toArrayBuffer(asn.valueBlock.valueHex);
         return this;
     }
     toASN() {
@@ -5855,7 +5989,9 @@ class OctetString {
 }
 
 const AsnAnyConverter = {
-    fromASN: (value) => value instanceof Null ? null : value.valueBeforeDecodeView,
+    fromASN: (value) => value instanceof Null
+        ? null
+        : toArrayBuffer(value.valueBeforeDecodeView),
     toASN: (value) => {
         if (value === null) {
             return new Null();
@@ -5878,11 +6014,11 @@ const AsnEnumeratedConverter = {
     toASN: (value) => new Enumerated({ value }),
 };
 const AsnIntegerArrayBufferConverter = {
-    fromASN: (value) => value.valueBlock.valueHexView,
+    fromASN: (value) => toArrayBuffer(value.valueBlock.valueHexView),
     toASN: (value) => new Integer({ valueHex: value }),
 };
 const AsnBitStringConverter = {
-    fromASN: (value) => value.valueBlock.valueHexView,
+    fromASN: (value) => toArrayBuffer(value.valueBlock.valueHexView),
     toASN: (value) => new BitString$1({ valueHex: value }),
 };
 const AsnObjectIdentifierConverter = {
@@ -5894,7 +6030,7 @@ const AsnBooleanConverter = {
     toASN: (value) => new Boolean$1({ value }),
 };
 const AsnOctetStringConverter = {
-    fromASN: (value) => value.valueBlock.valueHexView,
+    fromASN: (value) => toArrayBuffer(value.valueBlock.valueHexView),
     toASN: (value) => new OctetString$1({ valueHex: value }),
 };
 const AsnConstructedOctetStringConverter = {
@@ -5998,10 +6134,9 @@ function isConvertible(target) {
     }
 }
 function isTypeOfArray(target) {
-    var _a;
     if (target) {
         const proto = Object.getPrototypeOf(target);
-        if (((_a = proto === null || proto === void 0 ? void 0 : proto.prototype) === null || _a === void 0 ? void 0 : _a.constructor) === Array) {
+        if (proto?.prototype?.constructor === Array) {
             return true;
         }
         return isTypeOfArray(proto);
@@ -6026,9 +6161,7 @@ function isArrayEqual(bytes1, bytes2) {
 }
 
 class AsnSchemaStorage {
-    constructor() {
-        this.items = new WeakMap();
-    }
+    items = new WeakMap();
     has(target) {
         return this.items.has(target);
     }
@@ -6049,7 +6182,9 @@ class AsnSchemaStorage {
         }
     }
     createDefault(target) {
-        const schema = { type: AsnTypeTypes.Sequence, items: {} };
+        const schema = {
+            type: AsnTypeTypes.Sequence, items: {},
+        };
         const parentSchema = this.findParentSchema(target);
         if (parentSchema) {
             Object.assign(schema, parentSchema);
@@ -6095,28 +6230,35 @@ class AsnSchemaStorage {
                 const Container = item.repeated === "set" ? Set$1 : Sequence;
                 asn1Item = new Container({
                     name: "",
-                    value: [new Repeated({ name, value: asn1Item })],
+                    value: [new Repeated({
+                            name, value: asn1Item,
+                        })],
                 });
             }
             if (item.context !== null && item.context !== undefined) {
                 if (item.implicit) {
                     if (typeof item.type === "number" || isConvertible(item.type)) {
                         const Container = item.repeated ? Constructed : Primitive;
-                        asn1Value.push(new Container({ name, optional, idBlock: { tagClass: 3, tagNumber: item.context } }));
+                        asn1Value.push(new Container({
+                            name, optional, idBlock: {
+                                tagClass: 3, tagNumber: item.context,
+                            },
+                        }));
                     }
                     else {
                         this.cache(item.type);
                         const isRepeated = !!item.repeated;
                         let value = !isRepeated ? this.get(item.type, true).schema : asn1Item;
-                        value =
-                            "valueBlock" in value
+                        value
+                            = "valueBlock" in value
                                 ? value.valueBlock.value
-                                :
-                                    value.value;
+                                : value.value;
                         asn1Value.push(new Constructed({
                             name: !isRepeated ? name : "",
                             optional,
-                            idBlock: { tagClass: 3, tagNumber: item.context },
+                            idBlock: {
+                                tagClass: 3, tagNumber: item.context,
+                            },
                             value: value,
                         }));
                     }
@@ -6124,7 +6266,9 @@ class AsnSchemaStorage {
                 else {
                     asn1Value.push(new Constructed({
                         optional,
-                        idBlock: { tagClass: 3, tagNumber: item.context },
+                        idBlock: {
+                            tagClass: 3, tagNumber: item.context,
+                        },
                         value: [asn1Item],
                     }));
                 }
@@ -6136,13 +6280,19 @@ class AsnSchemaStorage {
         }
         switch (schema.type) {
             case AsnTypeTypes.Sequence:
-                return new Sequence({ value: asn1Value, name: "" });
+                return new Sequence({
+                    value: asn1Value, name: "",
+                });
             case AsnTypeTypes.Set:
-                return new Set$1({ value: asn1Value, name: "" });
+                return new Set$1({
+                    value: asn1Value, name: "",
+                });
             case AsnTypeTypes.Choice:
-                return new Choice({ value: asn1Value, name: "" });
+                return new Choice({
+                    value: asn1Value, name: "",
+                });
             default:
-                throw new Error(`Unsupported ASN1 type in use`);
+                throw new Error("Unsupported ASN1 type in use");
         }
     }
     set(target, schema) {
@@ -6194,15 +6344,12 @@ const AsnProp = (options) => (target, propertyKey) => {
 };
 
 class AsnSchemaValidationError extends Error {
-    constructor() {
-        super(...arguments);
-        this.schemas = [];
-    }
+    schemas = [];
 }
 
 class AsnParser {
     static parse(data, target) {
-        const asn1Parsed = fromBER(data);
+        const asn1Parsed = fromBER(toArrayBuffer(data));
         if (asn1Parsed.result.error) {
             throw new Error(asn1Parsed.result.error);
         }
@@ -6219,10 +6366,10 @@ class AsnParser {
             schemaStorage.cache(target);
             let targetSchema = schema.schema;
             const choiceResult = this.handleChoiceTypes(asn1Schema, schema, target, targetSchema);
-            if (choiceResult === null || choiceResult === void 0 ? void 0 : choiceResult.result) {
+            if (choiceResult?.result) {
                 return choiceResult.result;
             }
-            if (choiceResult === null || choiceResult === void 0 ? void 0 : choiceResult.targetSchema) {
+            if (choiceResult?.targetSchema) {
                 targetSchema = choiceResult.targetSchema;
             }
             const sequenceResult = this.handleSequenceTypes(asn1Schema, schema, target, targetSchema);
@@ -6241,20 +6388,20 @@ class AsnParser {
         }
     }
     static handleChoiceTypes(asn1Schema, schema, target, targetSchema) {
-        if (asn1Schema.constructor === Constructed &&
-            schema.type === AsnTypeTypes.Choice &&
-            asn1Schema.idBlock.tagClass === 3) {
+        if (asn1Schema.constructor === Constructed
+            && schema.type === AsnTypeTypes.Choice
+            && asn1Schema.idBlock.tagClass === 3) {
             for (const key in schema.items) {
                 const schemaItem = schema.items[key];
                 if (schemaItem.context === asn1Schema.idBlock.tagNumber && schemaItem.implicit) {
-                    if (typeof schemaItem.type === "function" &&
-                        schemaStorage.has(schemaItem.type)) {
+                    if (typeof schemaItem.type === "function"
+                        && schemaStorage.has(schemaItem.type)) {
                         const fieldSchema = schemaStorage.get(schemaItem.type);
                         if (fieldSchema && fieldSchema.type === AsnTypeTypes.Sequence) {
                             const newSeq = new Sequence();
-                            if ("value" in asn1Schema.valueBlock &&
-                                Array.isArray(asn1Schema.valueBlock.value) &&
-                                "value" in newSeq.valueBlock) {
+                            if ("value" in asn1Schema.valueBlock
+                                && Array.isArray(asn1Schema.valueBlock.value)
+                                && "value" in newSeq.valueBlock) {
                                 newSeq.valueBlock.value = asn1Schema.valueBlock.value;
                                 const fieldValue = this.fromASN(newSeq, schemaItem.type);
                                 const res = new target();
@@ -6266,8 +6413,8 @@ class AsnParser {
                 }
             }
         }
-        else if (asn1Schema.constructor === Constructed &&
-            schema.type !== AsnTypeTypes.Choice) {
+        else if (asn1Schema.constructor === Constructed
+            && schema.type !== AsnTypeTypes.Choice) {
             const newTargetSchema = new Constructed({
                 idBlock: {
                     tagClass: 3,
@@ -6343,19 +6490,21 @@ class AsnParser {
         return converter.fromASN(asn1Element);
     }
     static isOptionalChoiceField(schemaItem) {
-        return (schemaItem.optional &&
-            typeof schemaItem.type === "function" &&
-            schemaStorage.has(schemaItem.type) &&
-            schemaStorage.get(schemaItem.type).type === AsnTypeTypes.Choice);
+        return (schemaItem.optional
+            && typeof schemaItem.type === "function"
+            && schemaStorage.has(schemaItem.type)
+            && schemaStorage.get(schemaItem.type).type === AsnTypeTypes.Choice);
     }
     static processOptionalChoiceField(asn1Element, schemaItem) {
         try {
             const value = this.fromASN(asn1Element, schemaItem.type);
-            return { processed: true, value };
+            return {
+                processed: true, value,
+            };
         }
         catch (err) {
-            if (err instanceof AsnSchemaValidationError &&
-                /Wrong values for Choice type/.test(err.message)) {
+            if (err instanceof AsnSchemaValidationError
+                && /Wrong values for Choice type/.test(err.message)) {
                 return { processed: false };
             }
             throw err;
@@ -6363,7 +6512,7 @@ class AsnParser {
     }
     static handleArrayTypes(asn1Schema, schema, target) {
         if (!("value" in asn1Schema.valueBlock && Array.isArray(asn1Schema.valueBlock.value))) {
-            throw new Error(`Cannot get items from the ASN.1 parsed value. ASN.1 object is not constructed.`);
+            throw new Error("Cannot get items from the ASN.1 parsed value. ASN.1 object is not constructed.");
         }
         const itemType = schema.itemType;
         if (typeof itemType === "number") {
@@ -6392,10 +6541,10 @@ class AsnParser {
             else {
                 parsedValue = this.processComplexSchemaItem(asn1SchemaValue, schemaItem, schemaItemType);
             }
-            if (parsedValue &&
-                typeof parsedValue === "object" &&
-                "value" in parsedValue &&
-                "raw" in parsedValue) {
+            if (parsedValue
+                && typeof parsedValue === "object"
+                && "value" in parsedValue
+                && "raw" in parsedValue) {
                 res[key] = parsedValue.value;
                 res[`${key}Raw`] = parsedValue.raw;
             }
@@ -6405,10 +6554,10 @@ class AsnParser {
         }
     }
     static processPrimitiveSchemaItem(asn1SchemaValue, schemaItem, schemaItemType) {
-        var _a;
-        const converter = (_a = schemaItem.converter) !== null && _a !== void 0 ? _a : (isConvertible(schemaItemType)
-            ? new schemaItemType()
-            : null);
+        const converter = schemaItem.converter
+            ?? (isConvertible(schemaItemType)
+                ? new schemaItemType()
+                : null);
         if (!converter) {
             throw new Error("Converter is empty");
         }
@@ -6428,8 +6577,8 @@ class AsnParser {
             if (newItemAsn.offset === -1) {
                 throw new Error(`Cannot parse the child item. ${newItemAsn.result.error}`);
             }
-            if (!("value" in newItemAsn.result.valueBlock &&
-                Array.isArray(newItemAsn.result.valueBlock.value))) {
+            if (!("value" in newItemAsn.result.valueBlock
+                && Array.isArray(newItemAsn.result.valueBlock.value))) {
                 throw new Error("Cannot get items from the ASN.1 parsed value. ASN.1 object is not constructed.");
             }
             const value = newItemAsn.result.valueBlock.value;
@@ -6473,8 +6622,8 @@ class AsnParser {
                     return this.fromASN(valueToProcess, schemaItemType);
                 }
                 catch (err) {
-                    if (err instanceof AsnSchemaValidationError &&
-                        /Wrong values for Choice type/.test(err.message)) {
+                    if (err instanceof AsnSchemaValidationError
+                        && /Wrong values for Choice type/.test(err.message)) {
                         return undefined;
                     }
                     throw err;
@@ -6497,18 +6646,18 @@ class AsnParser {
             const schema = schemaStorage.get(schemaItemType);
             if (schema.type === AsnTypeTypes.Sequence) {
                 const newSeq = new Sequence();
-                if ("value" in asn1SchemaValue.valueBlock &&
-                    Array.isArray(asn1SchemaValue.valueBlock.value) &&
-                    "value" in newSeq.valueBlock) {
+                if ("value" in asn1SchemaValue.valueBlock
+                    && Array.isArray(asn1SchemaValue.valueBlock.value)
+                    && "value" in newSeq.valueBlock) {
                     newSeq.valueBlock.value = asn1SchemaValue.valueBlock.value;
                     return newSeq;
                 }
             }
             else if (schema.type === AsnTypeTypes.Set) {
                 const newSet = new Set$1();
-                if ("value" in asn1SchemaValue.valueBlock &&
-                    Array.isArray(asn1SchemaValue.valueBlock.value) &&
-                    "value" in newSet.valueBlock) {
+                if ("value" in asn1SchemaValue.valueBlock
+                    && Array.isArray(asn1SchemaValue.valueBlock.value)
+                    && "value" in newSet.valueBlock) {
                     newSet.valueBlock.value = asn1SchemaValue.valueBlock.value;
                     return newSet;
                 }
@@ -6555,22 +6704,22 @@ class AsnSerializer {
             for (const key in schema.items) {
                 const schemaItem = schema.items[key];
                 const objProp = obj[key];
-                if (objProp === undefined ||
-                    schemaItem.defaultValue === objProp ||
-                    (typeof schemaItem.defaultValue === "object" &&
-                        typeof objProp === "object" &&
-                        isArrayEqual(this.serialize(schemaItem.defaultValue), this.serialize(objProp)))) {
+                if (objProp === undefined
+                    || schemaItem.defaultValue === objProp
+                    || (typeof schemaItem.defaultValue === "object"
+                        && typeof objProp === "object"
+                        && isArrayEqual(this.serialize(schemaItem.defaultValue), this.serialize(objProp)))) {
                     continue;
                 }
                 const asn1Item = AsnSerializer.toAsnItem(schemaItem, key, target, objProp);
                 if (typeof schemaItem.context === "number") {
                     if (schemaItem.implicit) {
-                        if (!schemaItem.repeated &&
-                            (typeof schemaItem.type === "number" || isConvertible(schemaItem.type))) {
+                        if (!schemaItem.repeated
+                            && (typeof schemaItem.type === "number" || isConvertible(schemaItem.type))) {
                             const value = {};
-                            value.valueHex =
-                                asn1Item instanceof Null
-                                    ? asn1Item.valueBeforeDecodeView
+                            value.valueHex
+                                = asn1Item instanceof Null
+                                    ? toArrayBuffer(asn1Item.valueBeforeDecodeView)
                                     : asn1Item.valueBlock.toBER();
                             asn1Value.push(new Primitive({
                                 optional: schemaItem.optional,
@@ -6641,9 +6790,7 @@ class AsnSerializer {
                 }
                 const items = Array.from(objProp, (element) => converter.toASN(element));
                 const Container = schemaItem.repeated === "sequence" ? Sequence : Set$1;
-                asn1Item = new Container({
-                    value: items,
-                });
+                asn1Item = new Container({ value: items });
             }
             else {
                 asn1Item = converter.toASN(objProp);
@@ -6656,9 +6803,7 @@ class AsnSerializer {
                 }
                 const items = Array.from(objProp, (element) => this.toASN(element));
                 const Container = schemaItem.repeated === "sequence" ? Sequence : Set$1;
-                asn1Item = new Container({
-                    value: items,
-                });
+                asn1Item = new Container({ value: items });
             }
             else {
                 asn1Item = this.toASN(objProp);
@@ -6690,8 +6835,8 @@ class AsnConvert {
         return AsnParser.parse(data, target);
     }
     static toString(data) {
-        const buf = BufferSourceConverter.isBufferSource(data)
-            ? BufferSourceConverter.toArrayBuffer(data)
+        const buf = isBufferSource(data)
+            ? toArrayBuffer(data)
             : AsnConvert.serialize(data);
         const asn = fromBER(buf);
         if (asn.offset === -1) {
@@ -6742,6 +6887,45 @@ typeof SuppressedError === "function" ? SuppressedError : function (error, suppr
   var e = new Error(message);
   return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
 };
+
+function groupPairs(pairs, group) {
+    if (!group) {
+        return pairs.join("");
+    }
+    if (!Number.isInteger(group.size) || group.size < 1) {
+        throw new RangeError("Hex group size must be a positive integer");
+    }
+    const chunks = [];
+    for (let index = 0; index < pairs.length; index += group.size) {
+        chunks.push(pairs.slice(index, index + group.size).join(""));
+    }
+    return chunks.join(group.separator);
+}
+function encode(data, options = {}) {
+    const bytes = toUint8Array(data);
+    const casing = options.case ?? "lower";
+    const pairs = Array.from(bytes, (byte) => {
+        const text = byte.toString(16).padStart(2, "0");
+        return casing === "upper" ? text.toUpperCase() : text;
+    });
+    let body = "";
+    if (options.line) {
+        const bytesPerLine = options.line.bytesPerLine;
+        if (!Number.isInteger(bytesPerLine) || bytesPerLine < 1) {
+            throw new RangeError("Hex bytesPerLine must be a positive integer");
+        }
+        const separator = options.line.separator ?? "\n";
+        const lines = [];
+        for (let index = 0; index < pairs.length; index += bytesPerLine) {
+            lines.push(groupPairs(pairs.slice(index, index + bytesPerLine), options.group));
+        }
+        body = lines.join(separator);
+    }
+    else {
+        body = groupPairs(pairs, options.group);
+    }
+    return `${options.prefix ?? ""}${body}`;
+}
 
 class IpConverter {
     static isIPv4(ip) {
@@ -6889,7 +7073,7 @@ class IpConverter {
                 return `${addrStr}/${prefixLen}`;
             }
         }
-        return this.decodeIP(Convert.ToHex(buf));
+        return this.decodeIP(encode(buf));
     }
     static fromString(text) {
         if (text.includes("/")) {
@@ -6918,16 +7102,21 @@ class IpConverter {
 
 var RelativeDistinguishedName_1, RDNSequence_1, Name_1;
 let DirectoryString = class DirectoryString {
+    teletexString;
+    printableString;
+    universalString;
+    utf8String;
+    bmpString;
     constructor(params = {}) {
         Object.assign(this, params);
     }
     toString() {
-        return (this.bmpString ||
-            this.printableString ||
-            this.teletexString ||
-            this.universalString ||
-            this.utf8String ||
-            "");
+        return (this.bmpString
+            || this.printableString
+            || this.teletexString
+            || this.universalString
+            || this.utf8String
+            || "");
     }
 };
 __decorate([
@@ -6949,12 +7138,14 @@ DirectoryString = __decorate([
     AsnType({ type: AsnTypeTypes.Choice })
 ], DirectoryString);
 let AttributeValue = class AttributeValue extends DirectoryString {
+    ia5String;
+    anyValue;
     constructor(params = {}) {
         super(params);
         Object.assign(this, params);
     }
     toString() {
-        return this.ia5String || (this.anyValue ? Convert.ToHex(this.anyValue) : super.toString());
+        return this.ia5String || (this.anyValue ? encode(this.anyValue) : super.toString());
     }
 };
 __decorate([
@@ -6967,9 +7158,9 @@ AttributeValue = __decorate([
     AsnType({ type: AsnTypeTypes.Choice })
 ], AttributeValue);
 class AttributeTypeAndValue {
+    type = "";
+    value = new AttributeValue();
     constructor(params = {}) {
-        this.type = "";
-        this.value = new AttributeValue();
         Object.assign(this, params);
     }
 }
@@ -6986,7 +7177,9 @@ let RelativeDistinguishedName = RelativeDistinguishedName_1 = class RelativeDist
     }
 };
 RelativeDistinguishedName = RelativeDistinguishedName_1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Set, itemType: AttributeTypeAndValue })
+    AsnType({
+        type: AsnTypeTypes.Set, itemType: AttributeTypeAndValue,
+    })
 ], RelativeDistinguishedName);
 let RDNSequence = RDNSequence_1 = class RDNSequence extends AsnArray {
     constructor(items) {
@@ -6995,7 +7188,9 @@ let RDNSequence = RDNSequence_1 = class RDNSequence extends AsnArray {
     }
 };
 RDNSequence = RDNSequence_1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Sequence, itemType: RelativeDistinguishedName })
+    AsnType({
+        type: AsnTypeTypes.Sequence, itemType: RelativeDistinguishedName,
+    })
 ], RDNSequence);
 let Name$1 = Name_1 = class Name extends RDNSequence {
     constructor(items) {
@@ -7012,9 +7207,9 @@ const AsnIpConverter = {
     toASN: (value) => AsnOctetStringConverter.toASN(IpConverter.fromString(value)),
 };
 class OtherName {
+    typeId = "";
+    value = new ArrayBuffer(0);
     constructor(params = {}) {
-        this.typeId = "";
-        this.value = new ArrayBuffer(0);
         Object.assign(this, params);
     }
 }
@@ -7022,45 +7217,75 @@ __decorate([
     AsnProp({ type: AsnPropTypes.ObjectIdentifier })
 ], OtherName.prototype, "typeId", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Any, context: 0 })
+    AsnProp({
+        type: AsnPropTypes.Any, context: 0,
+    })
 ], OtherName.prototype, "value", void 0);
 class EDIPartyName {
+    nameAssigner;
+    partyName = new DirectoryString();
     constructor(params = {}) {
-        this.partyName = new DirectoryString();
         Object.assign(this, params);
     }
 }
 __decorate([
-    AsnProp({ type: DirectoryString, optional: true, context: 0, implicit: true })
+    AsnProp({
+        type: DirectoryString, optional: true, context: 0, implicit: true,
+    })
 ], EDIPartyName.prototype, "nameAssigner", void 0);
 __decorate([
-    AsnProp({ type: DirectoryString, context: 1, implicit: true })
+    AsnProp({
+        type: DirectoryString, context: 1, implicit: true,
+    })
 ], EDIPartyName.prototype, "partyName", void 0);
 let GeneralName$1 = class GeneralName {
+    otherName;
+    rfc822Name;
+    dNSName;
+    x400Address;
+    directoryName;
+    ediPartyName;
+    uniformResourceIdentifier;
+    iPAddress;
+    registeredID;
     constructor(params = {}) {
         Object.assign(this, params);
     }
 };
 __decorate([
-    AsnProp({ type: OtherName, context: 0, implicit: true })
+    AsnProp({
+        type: OtherName, context: 0, implicit: true,
+    })
 ], GeneralName$1.prototype, "otherName", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.IA5String, context: 1, implicit: true })
+    AsnProp({
+        type: AsnPropTypes.IA5String, context: 1, implicit: true,
+    })
 ], GeneralName$1.prototype, "rfc822Name", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.IA5String, context: 2, implicit: true })
+    AsnProp({
+        type: AsnPropTypes.IA5String, context: 2, implicit: true,
+    })
 ], GeneralName$1.prototype, "dNSName", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Any, context: 3, implicit: true })
+    AsnProp({
+        type: AsnPropTypes.Any, context: 3, implicit: true,
+    })
 ], GeneralName$1.prototype, "x400Address", void 0);
 __decorate([
-    AsnProp({ type: Name$1, context: 4, implicit: false })
+    AsnProp({
+        type: Name$1, context: 4, implicit: false,
+    })
 ], GeneralName$1.prototype, "directoryName", void 0);
 __decorate([
-    AsnProp({ type: EDIPartyName, context: 5 })
+    AsnProp({
+        type: EDIPartyName, context: 5,
+    })
 ], GeneralName$1.prototype, "ediPartyName", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.IA5String, context: 6, implicit: true })
+    AsnProp({
+        type: AsnPropTypes.IA5String, context: 6, implicit: true,
+    })
 ], GeneralName$1.prototype, "uniformResourceIdentifier", void 0);
 __decorate([
     AsnProp({
@@ -7071,7 +7296,9 @@ __decorate([
     })
 ], GeneralName$1.prototype, "iPAddress", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.ObjectIdentifier, context: 8, implicit: true })
+    AsnProp({
+        type: AsnPropTypes.ObjectIdentifier, context: 8, implicit: true,
+    })
 ], GeneralName$1.prototype, "registeredID", void 0);
 GeneralName$1 = __decorate([
     AsnType({ type: AsnTypeTypes.Choice })
@@ -7090,9 +7317,9 @@ const id_ce = "2.5.29";
 var AuthorityInfoAccessSyntax_1;
 const id_pe_authorityInfoAccess = `${id_pe}.1`;
 class AccessDescription {
+    accessMethod = "";
+    accessLocation = new GeneralName$1();
     constructor(params = {}) {
-        this.accessMethod = "";
-        this.accessLocation = new GeneralName$1();
         Object.assign(this, params);
     }
 }
@@ -7109,13 +7336,18 @@ let AuthorityInfoAccessSyntax = AuthorityInfoAccessSyntax_1 = class AuthorityInf
     }
 };
 AuthorityInfoAccessSyntax = AuthorityInfoAccessSyntax_1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Sequence, itemType: AccessDescription })
+    AsnType({
+        type: AsnTypeTypes.Sequence, itemType: AccessDescription,
+    })
 ], AuthorityInfoAccessSyntax);
 
 const id_ce_authorityKeyIdentifier = `${id_ce}.35`;
 class KeyIdentifier extends OctetString {
 }
 class AuthorityKeyIdentifier {
+    keyIdentifier;
+    authorityCertIssuer;
+    authorityCertSerialNumber;
     constructor(params = {}) {
         if (params) {
             Object.assign(this, params);
@@ -7123,10 +7355,14 @@ class AuthorityKeyIdentifier {
     }
 }
 __decorate([
-    AsnProp({ type: KeyIdentifier, context: 0, optional: true, implicit: true })
+    AsnProp({
+        type: KeyIdentifier, context: 0, optional: true, implicit: true,
+    })
 ], AuthorityKeyIdentifier.prototype, "keyIdentifier", void 0);
 __decorate([
-    AsnProp({ type: GeneralName$1, context: 1, optional: true, implicit: true, repeated: "sequence" })
+    AsnProp({
+        type: GeneralName$1, context: 1, optional: true, implicit: true, repeated: "sequence",
+    })
 ], AuthorityKeyIdentifier.prototype, "authorityCertIssuer", void 0);
 __decorate([
     AsnProp({
@@ -7140,16 +7376,21 @@ __decorate([
 
 const id_ce_basicConstraints = `${id_ce}.19`;
 class BasicConstraints {
+    cA = false;
+    pathLenConstraint;
     constructor(params = {}) {
-        this.cA = false;
         Object.assign(this, params);
     }
 }
 __decorate([
-    AsnProp({ type: AsnPropTypes.Boolean, defaultValue: false })
+    AsnProp({
+        type: AsnPropTypes.Boolean, defaultValue: false,
+    })
 ], BasicConstraints.prototype, "cA", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, optional: true })
+    AsnProp({
+        type: AsnPropTypes.Integer, optional: true,
+    })
 ], BasicConstraints.prototype, "pathLenConstraint", void 0);
 
 var GeneralNames_1;
@@ -7160,7 +7401,9 @@ let GeneralNames$1 = GeneralNames_1 = class GeneralNames extends AsnArray {
     }
 };
 GeneralNames$1 = GeneralNames_1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Sequence, itemType: GeneralName$1 })
+    AsnType({
+        type: AsnTypeTypes.Sequence, itemType: GeneralName$1,
+    })
 ], GeneralNames$1);
 
 var CertificateIssuer_1;
@@ -7178,6 +7421,10 @@ CertificateIssuer = CertificateIssuer_1 = __decorate([
 var CertificatePolicies_1;
 const id_ce_certificatePolicies = `${id_ce}.32`;
 let DisplayText = class DisplayText {
+    ia5String;
+    visibleString;
+    bmpString;
+    utf8String;
     constructor(params = {}) {
         Object.assign(this, params);
     }
@@ -7201,9 +7448,9 @@ DisplayText = __decorate([
     AsnType({ type: AsnTypeTypes.Choice })
 ], DisplayText);
 class NoticeReference {
+    organization = new DisplayText();
+    noticeNumbers = [];
     constructor(params = {}) {
-        this.organization = new DisplayText();
-        this.noticeNumbers = [];
         Object.assign(this, params);
     }
 }
@@ -7211,20 +7458,30 @@ __decorate([
     AsnProp({ type: DisplayText })
 ], NoticeReference.prototype, "organization", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, repeated: "sequence" })
+    AsnProp({
+        type: AsnPropTypes.Integer, repeated: "sequence",
+    })
 ], NoticeReference.prototype, "noticeNumbers", void 0);
 class UserNotice {
+    noticeRef;
+    explicitText;
     constructor(params = {}) {
         Object.assign(this, params);
     }
 }
 __decorate([
-    AsnProp({ type: NoticeReference, optional: true })
+    AsnProp({
+        type: NoticeReference, optional: true,
+    })
 ], UserNotice.prototype, "noticeRef", void 0);
 __decorate([
-    AsnProp({ type: DisplayText, optional: true })
+    AsnProp({
+        type: DisplayText, optional: true,
+    })
 ], UserNotice.prototype, "explicitText", void 0);
 let Qualifier = class Qualifier {
+    cPSuri;
+    userNotice;
     constructor(params = {}) {
         Object.assign(this, params);
     }
@@ -7239,9 +7496,9 @@ Qualifier = __decorate([
     AsnType({ type: AsnTypeTypes.Choice })
 ], Qualifier);
 class PolicyQualifierInfo {
+    policyQualifierId = "";
+    qualifier = new ArrayBuffer(0);
     constructor(params = {}) {
-        this.policyQualifierId = "";
-        this.qualifier = new ArrayBuffer(0);
         Object.assign(this, params);
     }
 }
@@ -7252,8 +7509,9 @@ __decorate([
     AsnProp({ type: AsnPropTypes.Any })
 ], PolicyQualifierInfo.prototype, "qualifier", void 0);
 class PolicyInformation {
+    policyIdentifier = "";
+    policyQualifiers;
     constructor(params = {}) {
-        this.policyIdentifier = "";
         Object.assign(this, params);
     }
 }
@@ -7261,7 +7519,9 @@ __decorate([
     AsnProp({ type: AsnPropTypes.ObjectIdentifier })
 ], PolicyInformation.prototype, "policyIdentifier", void 0);
 __decorate([
-    AsnProp({ type: PolicyQualifierInfo, repeated: "sequence", optional: true })
+    AsnProp({
+        type: PolicyQualifierInfo, repeated: "sequence", optional: true,
+    })
 ], PolicyInformation.prototype, "policyQualifiers", void 0);
 let CertificatePolicies = CertificatePolicies_1 = class CertificatePolicies extends AsnArray {
     constructor(items) {
@@ -7270,10 +7530,13 @@ let CertificatePolicies = CertificatePolicies_1 = class CertificatePolicies exte
     }
 };
 CertificatePolicies = CertificatePolicies_1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Sequence, itemType: PolicyInformation })
+    AsnType({
+        type: AsnTypeTypes.Sequence, itemType: PolicyInformation,
+    })
 ], CertificatePolicies);
 
 let CRLNumber = class CRLNumber {
+    value;
     constructor(value = 0) {
         this.value = value;
     }
@@ -7343,32 +7606,47 @@ class Reason extends BitString {
     }
 }
 let DistributionPointName = class DistributionPointName {
+    fullName;
+    nameRelativeToCRLIssuer;
     constructor(params = {}) {
         Object.assign(this, params);
     }
 };
 __decorate([
-    AsnProp({ type: GeneralName$1, context: 0, repeated: "sequence", implicit: true })
+    AsnProp({
+        type: GeneralName$1, context: 0, repeated: "sequence", implicit: true,
+    })
 ], DistributionPointName.prototype, "fullName", void 0);
 __decorate([
-    AsnProp({ type: RelativeDistinguishedName, context: 1, implicit: true })
+    AsnProp({
+        type: RelativeDistinguishedName, context: 1, implicit: true,
+    })
 ], DistributionPointName.prototype, "nameRelativeToCRLIssuer", void 0);
 DistributionPointName = __decorate([
     AsnType({ type: AsnTypeTypes.Choice })
 ], DistributionPointName);
 class DistributionPoint {
+    distributionPoint;
+    reasons;
+    cRLIssuer;
     constructor(params = {}) {
         Object.assign(this, params);
     }
 }
 __decorate([
-    AsnProp({ type: DistributionPointName, context: 0, optional: true })
+    AsnProp({
+        type: DistributionPointName, context: 0, optional: true,
+    })
 ], DistributionPoint.prototype, "distributionPoint", void 0);
 __decorate([
-    AsnProp({ type: Reason, context: 1, optional: true, implicit: true })
+    AsnProp({
+        type: Reason, context: 1, optional: true, implicit: true,
+    })
 ], DistributionPoint.prototype, "reasons", void 0);
 __decorate([
-    AsnProp({ type: GeneralName$1, context: 2, optional: true, repeated: "sequence", implicit: true })
+    AsnProp({
+        type: GeneralName$1, context: 2, optional: true, repeated: "sequence", implicit: true,
+    })
 ], DistributionPoint.prototype, "cRLIssuer", void 0);
 let CRLDistributionPoints = CRLDistributionPoints_1 = class CRLDistributionPoints extends AsnArray {
     constructor(items) {
@@ -7377,7 +7655,9 @@ let CRLDistributionPoints = CRLDistributionPoints_1 = class CRLDistributionPoint
     }
 };
 CRLDistributionPoints = CRLDistributionPoints_1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Sequence, itemType: DistributionPoint })
+    AsnType({
+        type: AsnTypeTypes.Sequence, itemType: DistributionPoint,
+    })
 ], CRLDistributionPoints);
 
 var FreshestCRL_1;
@@ -7388,21 +7668,27 @@ let FreshestCRL = FreshestCRL_1 = class FreshestCRL extends CRLDistributionPoint
     }
 };
 FreshestCRL = FreshestCRL_1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Sequence, itemType: DistributionPoint })
+    AsnType({
+        type: AsnTypeTypes.Sequence, itemType: DistributionPoint,
+    })
 ], FreshestCRL);
 
 class IssuingDistributionPoint {
+    static ONLY = false;
+    distributionPoint;
+    onlyContainsUserCerts = IssuingDistributionPoint.ONLY;
+    onlyContainsCACerts = IssuingDistributionPoint.ONLY;
+    onlySomeReasons;
+    indirectCRL = IssuingDistributionPoint.ONLY;
+    onlyContainsAttributeCerts = IssuingDistributionPoint.ONLY;
     constructor(params = {}) {
-        this.onlyContainsUserCerts = IssuingDistributionPoint.ONLY;
-        this.onlyContainsCACerts = IssuingDistributionPoint.ONLY;
-        this.indirectCRL = IssuingDistributionPoint.ONLY;
-        this.onlyContainsAttributeCerts = IssuingDistributionPoint.ONLY;
         Object.assign(this, params);
     }
 }
-IssuingDistributionPoint.ONLY = false;
 __decorate([
-    AsnProp({ type: DistributionPointName, context: 0, optional: true })
+    AsnProp({
+        type: DistributionPointName, context: 0, optional: true,
+    })
 ], IssuingDistributionPoint.prototype, "distributionPoint", void 0);
 __decorate([
     AsnProp({
@@ -7421,7 +7707,9 @@ __decorate([
     })
 ], IssuingDistributionPoint.prototype, "onlyContainsCACerts", void 0);
 __decorate([
-    AsnProp({ type: Reason, context: 3, optional: true, implicit: true })
+    AsnProp({
+        type: Reason, context: 3, optional: true, implicit: true,
+    })
 ], IssuingDistributionPoint.prototype, "onlySomeReasons", void 0);
 __decorate([
     AsnProp({
@@ -7455,8 +7743,8 @@ var CRLReasons;
     CRLReasons[CRLReasons["aACompromise"] = 10] = "aACompromise";
 })(CRLReasons || (CRLReasons = {}));
 let CRLReason = class CRLReason {
+    reason = CRLReasons.unspecified;
     constructor(reason = CRLReasons.unspecified) {
-        this.reason = CRLReasons.unspecified;
         this.reason = reason;
     }
     toJSON() {
@@ -7482,7 +7770,9 @@ let ExtendedKeyUsage$1 = ExtendedKeyUsage_1 = class ExtendedKeyUsage extends Asn
     }
 };
 ExtendedKeyUsage$1 = ExtendedKeyUsage_1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Sequence, itemType: AsnPropTypes.ObjectIdentifier })
+    AsnType({
+        type: AsnTypeTypes.Sequence, itemType: AsnPropTypes.ObjectIdentifier,
+    })
 ], ExtendedKeyUsage$1);
 const id_kp_serverAuth = `${id_kp}.1`;
 const id_kp_clientAuth = `${id_kp}.2`;
@@ -7492,12 +7782,15 @@ const id_kp_timeStamping = `${id_kp}.8`;
 const id_kp_OCSPSigning = `${id_kp}.9`;
 
 let InhibitAnyPolicy = class InhibitAnyPolicy {
+    value;
     constructor(value = new ArrayBuffer(0)) {
         this.value = value;
     }
 };
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter })
+    AsnProp({
+        type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter,
+    })
 ], InhibitAnyPolicy.prototype, "value", void 0);
 InhibitAnyPolicy = __decorate([
     AsnType({ type: AsnTypeTypes.Choice })
@@ -7505,8 +7798,8 @@ InhibitAnyPolicy = __decorate([
 
 const id_ce_invalidityDate = `${id_ce}.24`;
 let InvalidityDate = class InvalidityDate {
+    value = new Date();
     constructor(value) {
-        this.value = new Date();
         if (value) {
             this.value = value;
         }
@@ -7584,9 +7877,10 @@ class KeyUsage extends BitString {
 
 var GeneralSubtrees_1;
 class GeneralSubtree {
+    base = new GeneralName$1();
+    minimum = 0;
+    maximum;
     constructor(params = {}) {
-        this.base = new GeneralName$1();
-        this.minimum = 0;
         Object.assign(this, params);
     }
 }
@@ -7594,10 +7888,14 @@ __decorate([
     AsnProp({ type: GeneralName$1 })
 ], GeneralSubtree.prototype, "base", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, context: 0, defaultValue: 0, implicit: true })
+    AsnProp({
+        type: AsnPropTypes.Integer, context: 0, defaultValue: 0, implicit: true,
+    })
 ], GeneralSubtree.prototype, "minimum", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, context: 1, optional: true, implicit: true })
+    AsnProp({
+        type: AsnPropTypes.Integer, context: 1, optional: true, implicit: true,
+    })
 ], GeneralSubtree.prototype, "maximum", void 0);
 let GeneralSubtrees = GeneralSubtrees_1 = class GeneralSubtrees extends AsnArray {
     constructor(items) {
@@ -7606,21 +7904,31 @@ let GeneralSubtrees = GeneralSubtrees_1 = class GeneralSubtrees extends AsnArray
     }
 };
 GeneralSubtrees = GeneralSubtrees_1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Sequence, itemType: GeneralSubtree })
+    AsnType({
+        type: AsnTypeTypes.Sequence, itemType: GeneralSubtree,
+    })
 ], GeneralSubtrees);
 class NameConstraints {
+    permittedSubtrees;
+    excludedSubtrees;
     constructor(params = {}) {
         Object.assign(this, params);
     }
 }
 __decorate([
-    AsnProp({ type: GeneralSubtrees, context: 0, optional: true, implicit: true })
+    AsnProp({
+        type: GeneralSubtrees, context: 0, optional: true, implicit: true,
+    })
 ], NameConstraints.prototype, "permittedSubtrees", void 0);
 __decorate([
-    AsnProp({ type: GeneralSubtrees, context: 1, optional: true, implicit: true })
+    AsnProp({
+        type: GeneralSubtrees, context: 1, optional: true, implicit: true,
+    })
 ], NameConstraints.prototype, "excludedSubtrees", void 0);
 
 class PolicyConstraints {
+    requireExplicitPolicy;
+    inhibitPolicyMapping;
     constructor(params = {}) {
         Object.assign(this, params);
     }
@@ -7646,9 +7954,9 @@ __decorate([
 
 var PolicyMappings_1;
 class PolicyMapping {
+    issuerDomainPolicy = "";
+    subjectDomainPolicy = "";
     constructor(params = {}) {
-        this.issuerDomainPolicy = "";
-        this.subjectDomainPolicy = "";
         Object.assign(this, params);
     }
 }
@@ -7665,7 +7973,9 @@ let PolicyMappings = PolicyMappings_1 = class PolicyMappings extends AsnArray {
     }
 };
 PolicyMappings = PolicyMappings_1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Sequence, itemType: PolicyMapping })
+    AsnType({
+        type: AsnTypeTypes.Sequence, itemType: PolicyMapping,
+    })
 ], PolicyMappings);
 
 var SubjectAlternativeName_1;
@@ -7681,9 +7991,9 @@ SubjectAlternativeName = SubjectAlternativeName_1 = __decorate([
 ], SubjectAlternativeName);
 
 let Attribute$2 = class Attribute {
+    type = "";
+    values = [];
     constructor(params = {}) {
-        this.type = "";
-        this.values = [];
         Object.assign(this, params);
     }
 };
@@ -7691,7 +8001,9 @@ __decorate([
     AsnProp({ type: AsnPropTypes.ObjectIdentifier })
 ], Attribute$2.prototype, "type", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Any, repeated: "set" })
+    AsnProp({
+        type: AsnPropTypes.Any, repeated: "set",
+    })
 ], Attribute$2.prototype, "values", void 0);
 
 var SubjectDirectoryAttributes_1;
@@ -7702,7 +8014,9 @@ let SubjectDirectoryAttributes = SubjectDirectoryAttributes_1 = class SubjectDir
     }
 };
 SubjectDirectoryAttributes = SubjectDirectoryAttributes_1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Sequence, itemType: Attribute$2 })
+    AsnType({
+        type: AsnTypeTypes.Sequence, itemType: Attribute$2,
+    })
 ], SubjectDirectoryAttributes);
 
 const id_ce_subjectKeyIdentifier = `${id_ce}.14`;
@@ -7710,15 +8024,21 @@ class SubjectKeyIdentifier extends KeyIdentifier {
 }
 
 class PrivateKeyUsagePeriod {
+    notBefore;
+    notAfter;
     constructor(params = {}) {
         Object.assign(this, params);
     }
 }
 __decorate([
-    AsnProp({ type: AsnPropTypes.GeneralizedTime, context: 0, implicit: true, optional: true })
+    AsnProp({
+        type: AsnPropTypes.GeneralizedTime, context: 0, implicit: true, optional: true,
+    })
 ], PrivateKeyUsagePeriod.prototype, "notBefore", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.GeneralizedTime, context: 1, implicit: true, optional: true })
+    AsnProp({
+        type: AsnPropTypes.GeneralizedTime, context: 1, implicit: true, optional: true,
+    })
 ], PrivateKeyUsagePeriod.prototype, "notAfter", void 0);
 
 var EntrustInfoFlags;
@@ -7747,9 +8067,9 @@ class EntrustInfo extends BitString {
     }
 }
 class EntrustVersionInfo {
+    entrustVers = "";
+    entrustInfoFlags = new EntrustInfo();
     constructor(params = {}) {
-        this.entrustVers = "";
-        this.entrustInfoFlags = new EntrustInfo();
         Object.assign(this, params);
     }
 }
@@ -7768,27 +8088,28 @@ let SubjectInfoAccessSyntax = SubjectInfoAccessSyntax_1 = class SubjectInfoAcces
     }
 };
 SubjectInfoAccessSyntax = SubjectInfoAccessSyntax_1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Sequence, itemType: AccessDescription })
+    AsnType({
+        type: AsnTypeTypes.Sequence, itemType: AccessDescription,
+    })
 ], SubjectInfoAccessSyntax);
 
 class AlgorithmIdentifier {
+    algorithm = "";
+    parameters;
     constructor(params = {}) {
-        this.algorithm = "";
         Object.assign(this, params);
     }
     isEqual(data) {
-        return (data instanceof AlgorithmIdentifier &&
-            data.algorithm == this.algorithm &&
-            ((data.parameters &&
-                this.parameters &&
-                isEqual(data.parameters, this.parameters)) ||
-                data.parameters === this.parameters));
+        return (data instanceof AlgorithmIdentifier
+            && data.algorithm == this.algorithm
+            && ((data.parameters
+                && this.parameters
+                && equal(data.parameters, this.parameters))
+                || data.parameters === this.parameters));
     }
 }
 __decorate([
-    AsnProp({
-        type: AsnPropTypes.ObjectIdentifier,
-    })
+    AsnProp({ type: AsnPropTypes.ObjectIdentifier })
 ], AlgorithmIdentifier.prototype, "algorithm", void 0);
 __decorate([
     AsnProp({
@@ -7798,9 +8119,9 @@ __decorate([
 ], AlgorithmIdentifier.prototype, "parameters", void 0);
 
 class SubjectPublicKeyInfo {
+    algorithm = new AlgorithmIdentifier();
+    subjectPublicKey = new ArrayBuffer(0);
     constructor(params = {}) {
-        this.algorithm = new AlgorithmIdentifier();
-        this.subjectPublicKey = new ArrayBuffer(0);
         Object.assign(this, params);
     }
 }
@@ -7812,6 +8133,8 @@ __decorate([
 ], SubjectPublicKeyInfo.prototype, "subjectPublicKey", void 0);
 
 let Time = class Time {
+    utcTime;
+    generalTime;
     constructor(time) {
         if (time) {
             if (typeof time === "string" || typeof time === "number" || time instanceof Date) {
@@ -7838,23 +8161,19 @@ let Time = class Time {
     }
 };
 __decorate([
-    AsnProp({
-        type: AsnPropTypes.UTCTime,
-    })
+    AsnProp({ type: AsnPropTypes.UTCTime })
 ], Time.prototype, "utcTime", void 0);
 __decorate([
-    AsnProp({
-        type: AsnPropTypes.GeneralizedTime,
-    })
+    AsnProp({ type: AsnPropTypes.GeneralizedTime })
 ], Time.prototype, "generalTime", void 0);
 Time = __decorate([
     AsnType({ type: AsnTypeTypes.Choice })
 ], Time);
 
 class Validity {
+    notBefore = new Time(new Date());
+    notAfter = new Time(new Date());
     constructor(params) {
-        this.notBefore = new Time(new Date());
-        this.notAfter = new Time(new Date());
         if (params) {
             this.notBefore = new Time(params.notBefore);
             this.notAfter = new Time(params.notAfter);
@@ -7870,14 +8189,14 @@ __decorate([
 
 var Extensions_1;
 let Extension$1 = class Extension {
+    static CRITICAL = false;
+    extnID = "";
+    critical = Extension.CRITICAL;
+    extnValue = new OctetString();
     constructor(params = {}) {
-        this.extnID = "";
-        this.critical = Extension.CRITICAL;
-        this.extnValue = new OctetString();
         Object.assign(this, params);
     }
 };
-Extension$1.CRITICAL = false;
 __decorate([
     AsnProp({ type: AsnPropTypes.ObjectIdentifier })
 ], Extension$1.prototype, "extnID", void 0);
@@ -7897,7 +8216,9 @@ let Extensions = Extensions_1 = class Extensions extends AsnArray {
     }
 };
 Extensions = Extensions_1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Sequence, itemType: Extension$1 })
+    AsnType({
+        type: AsnTypeTypes.Sequence, itemType: Extension$1,
+    })
 ], Extensions);
 
 var Version$1;
@@ -7908,14 +8229,17 @@ var Version$1;
 })(Version$1 || (Version$1 = {}));
 
 class TBSCertificate {
+    version = Version$1.v1;
+    serialNumber = new ArrayBuffer(0);
+    signature = new AlgorithmIdentifier();
+    issuer = new Name$1();
+    validity = new Validity();
+    subject = new Name$1();
+    subjectPublicKeyInfo = new SubjectPublicKeyInfo();
+    issuerUniqueID;
+    subjectUniqueID;
+    extensions;
     constructor(params = {}) {
-        this.version = Version$1.v1;
-        this.serialNumber = new ArrayBuffer(0);
-        this.signature = new AlgorithmIdentifier();
-        this.issuer = new Name$1();
-        this.validity = new Validity();
-        this.subject = new Name$1();
-        this.subjectPublicKeyInfo = new SubjectPublicKeyInfo();
         Object.assign(this, params);
     }
 }
@@ -7956,22 +8280,29 @@ __decorate([
     })
 ], TBSCertificate.prototype, "issuerUniqueID", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.BitString, context: 2, implicit: true, optional: true })
+    AsnProp({
+        type: AsnPropTypes.BitString, context: 2, implicit: true, optional: true,
+    })
 ], TBSCertificate.prototype, "subjectUniqueID", void 0);
 __decorate([
-    AsnProp({ type: Extensions, context: 3, optional: true })
+    AsnProp({
+        type: Extensions, context: 3, optional: true,
+    })
 ], TBSCertificate.prototype, "extensions", void 0);
 
 class Certificate {
+    tbsCertificate = new TBSCertificate();
+    tbsCertificateRaw;
+    signatureAlgorithm = new AlgorithmIdentifier();
+    signatureValue = new ArrayBuffer(0);
     constructor(params = {}) {
-        this.tbsCertificate = new TBSCertificate();
-        this.signatureAlgorithm = new AlgorithmIdentifier();
-        this.signatureValue = new ArrayBuffer(0);
         Object.assign(this, params);
     }
 }
 __decorate([
-    AsnProp({ type: TBSCertificate, raw: true })
+    AsnProp({
+        type: TBSCertificate, raw: true,
+    })
 ], Certificate.prototype, "tbsCertificate", void 0);
 __decorate([
     AsnProp({ type: AlgorithmIdentifier })
@@ -7981,31 +8312,42 @@ __decorate([
 ], Certificate.prototype, "signatureValue", void 0);
 
 class RevokedCertificate {
+    userCertificate = new ArrayBuffer(0);
+    revocationDate = new Time();
+    crlEntryExtensions;
     constructor(params = {}) {
-        this.userCertificate = new ArrayBuffer(0);
-        this.revocationDate = new Time();
         Object.assign(this, params);
     }
 }
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter })
+    AsnProp({
+        type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter,
+    })
 ], RevokedCertificate.prototype, "userCertificate", void 0);
 __decorate([
     AsnProp({ type: Time })
 ], RevokedCertificate.prototype, "revocationDate", void 0);
 __decorate([
-    AsnProp({ type: Extension$1, optional: true, repeated: "sequence" })
+    AsnProp({
+        type: Extension$1, optional: true, repeated: "sequence",
+    })
 ], RevokedCertificate.prototype, "crlEntryExtensions", void 0);
 class TBSCertList {
+    version;
+    signature = new AlgorithmIdentifier();
+    issuer = new Name$1();
+    thisUpdate = new Time();
+    nextUpdate;
+    revokedCertificates;
+    crlExtensions;
     constructor(params = {}) {
-        this.signature = new AlgorithmIdentifier();
-        this.issuer = new Name$1();
-        this.thisUpdate = new Time();
         Object.assign(this, params);
     }
 }
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, optional: true })
+    AsnProp({
+        type: AsnPropTypes.Integer, optional: true,
+    })
 ], TBSCertList.prototype, "version", void 0);
 __decorate([
     AsnProp({ type: AlgorithmIdentifier })
@@ -8017,25 +8359,34 @@ __decorate([
     AsnProp({ type: Time })
 ], TBSCertList.prototype, "thisUpdate", void 0);
 __decorate([
-    AsnProp({ type: Time, optional: true })
+    AsnProp({
+        type: Time, optional: true,
+    })
 ], TBSCertList.prototype, "nextUpdate", void 0);
 __decorate([
-    AsnProp({ type: RevokedCertificate, repeated: "sequence", optional: true })
+    AsnProp({
+        type: RevokedCertificate, repeated: "sequence", optional: true,
+    })
 ], TBSCertList.prototype, "revokedCertificates", void 0);
 __decorate([
-    AsnProp({ type: Extension$1, optional: true, context: 0, repeated: "sequence" })
+    AsnProp({
+        type: Extension$1, optional: true, context: 0, repeated: "sequence",
+    })
 ], TBSCertList.prototype, "crlExtensions", void 0);
 
 class CertificateList {
+    tbsCertList = new TBSCertList();
+    tbsCertListRaw;
+    signatureAlgorithm = new AlgorithmIdentifier();
+    signature = new ArrayBuffer(0);
     constructor(params = {}) {
-        this.tbsCertList = new TBSCertList();
-        this.signatureAlgorithm = new AlgorithmIdentifier();
-        this.signature = new ArrayBuffer(0);
         Object.assign(this, params);
     }
 }
 __decorate([
-    AsnProp({ type: TBSCertList, raw: true })
+    AsnProp({
+        type: TBSCertList, raw: true,
+    })
 ], CertificateList.prototype, "tbsCertList", void 0);
 __decorate([
     AsnProp({ type: AlgorithmIdentifier })
@@ -8045,9 +8396,9 @@ __decorate([
 ], CertificateList.prototype, "signature", void 0);
 
 class IssuerAndSerialNumber {
+    issuer = new Name$1();
+    serialNumber = new ArrayBuffer(0);
     constructor(params = {}) {
-        this.issuer = new Name$1();
-        this.serialNumber = new ArrayBuffer(0);
         Object.assign(this, params);
     }
 }
@@ -8055,16 +8406,22 @@ __decorate([
     AsnProp({ type: Name$1 })
 ], IssuerAndSerialNumber.prototype, "issuer", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter })
+    AsnProp({
+        type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter,
+    })
 ], IssuerAndSerialNumber.prototype, "serialNumber", void 0);
 
 let SignerIdentifier = class SignerIdentifier {
+    subjectKeyIdentifier;
+    issuerAndSerialNumber;
     constructor(params = {}) {
         Object.assign(this, params);
     }
 };
 __decorate([
-    AsnProp({ type: SubjectKeyIdentifier, context: 0, implicit: true })
+    AsnProp({
+        type: SubjectKeyIdentifier, context: 0, implicit: true,
+    })
 ], SignerIdentifier.prototype, "subjectKeyIdentifier", void 0);
 __decorate([
     AsnProp({ type: IssuerAndSerialNumber })
@@ -8114,9 +8471,9 @@ KeyDerivationAlgorithmIdentifier = __decorate([
 ], KeyDerivationAlgorithmIdentifier);
 
 let Attribute$1 = class Attribute {
+    attrType = "";
+    attrValues = [];
     constructor(params = {}) {
-        this.attrType = "";
-        this.attrValues = [];
         Object.assign(this, params);
     }
 };
@@ -8124,17 +8481,22 @@ __decorate([
     AsnProp({ type: AsnPropTypes.ObjectIdentifier })
 ], Attribute$1.prototype, "attrType", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Any, repeated: "set" })
+    AsnProp({
+        type: AsnPropTypes.Any, repeated: "set",
+    })
 ], Attribute$1.prototype, "attrValues", void 0);
 
 var SignerInfos_1;
 class SignerInfo {
+    version = CMSVersion.v0;
+    sid = new SignerIdentifier();
+    digestAlgorithm = new DigestAlgorithmIdentifier();
+    signedAttrs;
+    signedAttrsRaw;
+    signatureAlgorithm = new SignatureAlgorithmIdentifier();
+    signature = new OctetString();
+    unsignedAttrs;
     constructor(params = {}) {
-        this.version = CMSVersion.v0;
-        this.sid = new SignerIdentifier();
-        this.digestAlgorithm = new DigestAlgorithmIdentifier();
-        this.signatureAlgorithm = new SignatureAlgorithmIdentifier();
-        this.signature = new OctetString();
         Object.assign(this, params);
     }
 }
@@ -8164,7 +8526,9 @@ __decorate([
     AsnProp({ type: OctetString })
 ], SignerInfo.prototype, "signature", void 0);
 __decorate([
-    AsnProp({ type: Attribute$1, repeated: "set", context: 1, implicit: true, optional: true })
+    AsnProp({
+        type: Attribute$1, repeated: "set", context: 1, implicit: true, optional: true,
+    })
 ], SignerInfo.prototype, "unsignedAttrs", void 0);
 let SignerInfos = SignerInfos_1 = class SignerInfos extends AsnArray {
     constructor(items) {
@@ -8173,7 +8537,9 @@ let SignerInfos = SignerInfos_1 = class SignerInfos extends AsnArray {
     }
 };
 SignerInfos = SignerInfos_1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Set, itemType: SignerInfo })
+    AsnType({
+        type: AsnTypeTypes.Set, itemType: SignerInfo,
+    })
 ], SignerInfos);
 
 let CounterSignature$1 = class CounterSignature extends SignerInfo {
@@ -8189,10 +8555,10 @@ SigningTime$1 = __decorate([
 ], SigningTime$1);
 
 class ACClearAttrs {
+    acIssuer = new GeneralName$1();
+    acSerial = 0;
+    attrs = [];
     constructor(params = {}) {
-        this.acIssuer = new GeneralName$1();
-        this.acSerial = 0;
-        this.attrs = [];
         Object.assign(this, params);
     }
 }
@@ -8203,7 +8569,9 @@ __decorate([
     AsnProp({ type: AsnPropTypes.Integer })
 ], ACClearAttrs.prototype, "acSerial", void 0);
 __decorate([
-    AsnProp({ type: Attribute$2, repeated: "sequence" })
+    AsnProp({
+        type: Attribute$2, repeated: "sequence",
+    })
 ], ACClearAttrs.prototype, "attrs", void 0);
 
 var AttrSpec_1;
@@ -8214,33 +8582,46 @@ let AttrSpec = AttrSpec_1 = class AttrSpec extends AsnArray {
     }
 };
 AttrSpec = AttrSpec_1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Sequence, itemType: AsnPropTypes.ObjectIdentifier })
+    AsnType({
+        type: AsnTypeTypes.Sequence, itemType: AsnPropTypes.ObjectIdentifier,
+    })
 ], AttrSpec);
 
 class AAControls {
+    pathLenConstraint;
+    permittedAttrs;
+    excludedAttrs;
+    permitUnSpecified = true;
     constructor(params = {}) {
-        this.permitUnSpecified = true;
         Object.assign(this, params);
     }
 }
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, optional: true })
+    AsnProp({
+        type: AsnPropTypes.Integer, optional: true,
+    })
 ], AAControls.prototype, "pathLenConstraint", void 0);
 __decorate([
-    AsnProp({ type: AttrSpec, implicit: true, context: 0, optional: true })
+    AsnProp({
+        type: AttrSpec, implicit: true, context: 0, optional: true,
+    })
 ], AAControls.prototype, "permittedAttrs", void 0);
 __decorate([
-    AsnProp({ type: AttrSpec, implicit: true, context: 1, optional: true })
+    AsnProp({
+        type: AttrSpec, implicit: true, context: 1, optional: true,
+    })
 ], AAControls.prototype, "excludedAttrs", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Boolean, defaultValue: true })
+    AsnProp({
+        type: AsnPropTypes.Boolean, defaultValue: true,
+    })
 ], AAControls.prototype, "permitUnSpecified", void 0);
 
 class IssuerSerial {
+    issuer = new GeneralNames$1();
+    serial = new ArrayBuffer(0);
+    issuerUID = new ArrayBuffer(0);
     constructor(params = {}) {
-        this.issuer = new GeneralNames$1();
-        this.serial = new ArrayBuffer(0);
-        this.issuerUID = new ArrayBuffer(0);
         Object.assign(this, params);
     }
 }
@@ -8248,10 +8629,14 @@ __decorate([
     AsnProp({ type: GeneralNames$1 })
 ], IssuerSerial.prototype, "issuer", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter })
+    AsnProp({
+        type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter,
+    })
 ], IssuerSerial.prototype, "serial", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.BitString, optional: true })
+    AsnProp({
+        type: AsnPropTypes.BitString, optional: true,
+    })
 ], IssuerSerial.prototype, "issuerUID", void 0);
 
 var DigestedObjectType;
@@ -8261,10 +8646,11 @@ var DigestedObjectType;
     DigestedObjectType[DigestedObjectType["otherObjectTypes"] = 2] = "otherObjectTypes";
 })(DigestedObjectType || (DigestedObjectType = {}));
 class ObjectDigestInfo {
+    digestedObjectType = DigestedObjectType.publicKey;
+    otherObjectTypeID;
+    digestAlgorithm = new AlgorithmIdentifier();
+    objectDigest = new ArrayBuffer(0);
     constructor(params = {}) {
-        this.digestedObjectType = DigestedObjectType.publicKey;
-        this.digestAlgorithm = new AlgorithmIdentifier();
-        this.objectDigest = new ArrayBuffer(0);
         Object.assign(this, params);
     }
 }
@@ -8272,7 +8658,9 @@ __decorate([
     AsnProp({ type: AsnPropTypes.Enumerated })
 ], ObjectDigestInfo.prototype, "digestedObjectType", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.ObjectIdentifier, optional: true })
+    AsnProp({
+        type: AsnPropTypes.ObjectIdentifier, optional: true,
+    })
 ], ObjectDigestInfo.prototype, "otherObjectTypeID", void 0);
 __decorate([
     AsnProp({ type: AlgorithmIdentifier })
@@ -8282,39 +8670,54 @@ __decorate([
 ], ObjectDigestInfo.prototype, "objectDigest", void 0);
 
 class V2Form {
+    issuerName;
+    baseCertificateID;
+    objectDigestInfo;
     constructor(params = {}) {
         Object.assign(this, params);
     }
 }
 __decorate([
-    AsnProp({ type: GeneralNames$1, optional: true })
+    AsnProp({
+        type: GeneralNames$1, optional: true,
+    })
 ], V2Form.prototype, "issuerName", void 0);
 __decorate([
-    AsnProp({ type: IssuerSerial, context: 0, implicit: true, optional: true })
+    AsnProp({
+        type: IssuerSerial, context: 0, implicit: true, optional: true,
+    })
 ], V2Form.prototype, "baseCertificateID", void 0);
 __decorate([
-    AsnProp({ type: ObjectDigestInfo, context: 1, implicit: true, optional: true })
+    AsnProp({
+        type: ObjectDigestInfo, context: 1, implicit: true, optional: true,
+    })
 ], V2Form.prototype, "objectDigestInfo", void 0);
 
 let AttCertIssuer = class AttCertIssuer {
+    v1Form;
+    v2Form;
     constructor(params = {}) {
         Object.assign(this, params);
     }
 };
 __decorate([
-    AsnProp({ type: GeneralName$1, repeated: "sequence" })
+    AsnProp({
+        type: GeneralName$1, repeated: "sequence",
+    })
 ], AttCertIssuer.prototype, "v1Form", void 0);
 __decorate([
-    AsnProp({ type: V2Form, context: 0, implicit: true })
+    AsnProp({
+        type: V2Form, context: 0, implicit: true,
+    })
 ], AttCertIssuer.prototype, "v2Form", void 0);
 AttCertIssuer = __decorate([
     AsnType({ type: AsnTypeTypes.Choice })
 ], AttCertIssuer);
 
 class AttCertValidityPeriod {
+    notBeforeTime = new Date();
+    notAfterTime = new Date();
     constructor(params = {}) {
-        this.notBeforeTime = new Date();
-        this.notAfterTime = new Date();
         Object.assign(this, params);
     }
 }
@@ -8326,18 +8729,27 @@ __decorate([
 ], AttCertValidityPeriod.prototype, "notAfterTime", void 0);
 
 class Holder {
+    baseCertificateID;
+    entityName;
+    objectDigestInfo;
     constructor(params = {}) {
         Object.assign(this, params);
     }
 }
 __decorate([
-    AsnProp({ type: IssuerSerial, implicit: true, context: 0, optional: true })
+    AsnProp({
+        type: IssuerSerial, implicit: true, context: 0, optional: true,
+    })
 ], Holder.prototype, "baseCertificateID", void 0);
 __decorate([
-    AsnProp({ type: GeneralNames$1, implicit: true, context: 1, optional: true })
+    AsnProp({
+        type: GeneralNames$1, implicit: true, context: 1, optional: true,
+    })
 ], Holder.prototype, "entityName", void 0);
 __decorate([
-    AsnProp({ type: ObjectDigestInfo, implicit: true, context: 2, optional: true })
+    AsnProp({
+        type: ObjectDigestInfo, implicit: true, context: 2, optional: true,
+    })
 ], Holder.prototype, "objectDigestInfo", void 0);
 
 var AttCertVersion;
@@ -8345,14 +8757,16 @@ var AttCertVersion;
     AttCertVersion[AttCertVersion["v2"] = 1] = "v2";
 })(AttCertVersion || (AttCertVersion = {}));
 class AttributeCertificateInfo {
+    version = AttCertVersion.v2;
+    holder = new Holder();
+    issuer = new AttCertIssuer();
+    signature = new AlgorithmIdentifier();
+    serialNumber = new ArrayBuffer(0);
+    attrCertValidityPeriod = new AttCertValidityPeriod();
+    attributes = [];
+    issuerUniqueID;
+    extensions;
     constructor(params = {}) {
-        this.version = AttCertVersion.v2;
-        this.holder = new Holder();
-        this.issuer = new AttCertIssuer();
-        this.signature = new AlgorithmIdentifier();
-        this.serialNumber = new ArrayBuffer(0);
-        this.attrCertValidityPeriod = new AttCertValidityPeriod();
-        this.attributes = [];
         Object.assign(this, params);
     }
 }
@@ -8369,26 +8783,34 @@ __decorate([
     AsnProp({ type: AlgorithmIdentifier })
 ], AttributeCertificateInfo.prototype, "signature", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter })
+    AsnProp({
+        type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter,
+    })
 ], AttributeCertificateInfo.prototype, "serialNumber", void 0);
 __decorate([
     AsnProp({ type: AttCertValidityPeriod })
 ], AttributeCertificateInfo.prototype, "attrCertValidityPeriod", void 0);
 __decorate([
-    AsnProp({ type: Attribute$2, repeated: "sequence" })
+    AsnProp({
+        type: Attribute$2, repeated: "sequence",
+    })
 ], AttributeCertificateInfo.prototype, "attributes", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.BitString, optional: true })
+    AsnProp({
+        type: AsnPropTypes.BitString, optional: true,
+    })
 ], AttributeCertificateInfo.prototype, "issuerUniqueID", void 0);
 __decorate([
-    AsnProp({ type: Extensions, optional: true })
+    AsnProp({
+        type: Extensions, optional: true,
+    })
 ], AttributeCertificateInfo.prototype, "extensions", void 0);
 
 class AttributeCertificate {
+    acinfo = new AttributeCertificateInfo();
+    signatureAlgorithm = new AlgorithmIdentifier();
+    signatureValue = new ArrayBuffer(0);
     constructor(params = {}) {
-        this.acinfo = new AttributeCertificateInfo();
-        this.signatureAlgorithm = new AlgorithmIdentifier();
-        this.signatureValue = new ArrayBuffer(0);
         Object.assign(this, params);
     }
 }
@@ -8415,23 +8837,28 @@ class ClassList extends BitString {
 }
 
 class SecurityCategory {
+    type = "";
+    value = new ArrayBuffer(0);
     constructor(params = {}) {
-        this.type = "";
-        this.value = new ArrayBuffer(0);
         Object.assign(this, params);
     }
 }
 __decorate([
-    AsnProp({ type: AsnPropTypes.ObjectIdentifier, implicit: true, context: 0 })
+    AsnProp({
+        type: AsnPropTypes.ObjectIdentifier, implicit: true, context: 0,
+    })
 ], SecurityCategory.prototype, "type", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Any, implicit: true, context: 1 })
+    AsnProp({
+        type: AsnPropTypes.Any, implicit: true, context: 1,
+    })
 ], SecurityCategory.prototype, "value", void 0);
 
 class Clearance {
+    policyId = "";
+    classList = new ClassList(ClassListFlags.unclassified);
+    securityCategories;
     constructor(params = {}) {
-        this.policyId = "";
-        this.classList = new ClassList(ClassListFlags.unclassified);
         Object.assign(this, params);
     }
 }
@@ -8439,13 +8866,20 @@ __decorate([
     AsnProp({ type: AsnPropTypes.ObjectIdentifier })
 ], Clearance.prototype, "policyId", void 0);
 __decorate([
-    AsnProp({ type: ClassList, defaultValue: new ClassList(ClassListFlags.unclassified) })
+    AsnProp({
+        type: ClassList, defaultValue: new ClassList(ClassListFlags.unclassified),
+    })
 ], Clearance.prototype, "classList", void 0);
 __decorate([
-    AsnProp({ type: SecurityCategory, repeated: "set" })
+    AsnProp({
+        type: SecurityCategory, repeated: "set",
+    })
 ], Clearance.prototype, "securityCategories", void 0);
 
 class IetfAttrSyntaxValueChoices {
+    cotets;
+    oid;
+    string;
     constructor(params = {}) {
         Object.assign(this, params);
     }
@@ -8460,22 +8894,29 @@ __decorate([
     AsnProp({ type: AsnPropTypes.Utf8String })
 ], IetfAttrSyntaxValueChoices.prototype, "string", void 0);
 class IetfAttrSyntax {
+    policyAuthority;
+    values = [];
     constructor(params = {}) {
-        this.values = [];
         Object.assign(this, params);
     }
 }
 __decorate([
-    AsnProp({ type: GeneralNames$1, implicit: true, context: 0, optional: true })
+    AsnProp({
+        type: GeneralNames$1, implicit: true, context: 0, optional: true,
+    })
 ], IetfAttrSyntax.prototype, "policyAuthority", void 0);
 __decorate([
-    AsnProp({ type: IetfAttrSyntaxValueChoices, repeated: "sequence" })
+    AsnProp({
+        type: IetfAttrSyntaxValueChoices, repeated: "sequence",
+    })
 ], IetfAttrSyntax.prototype, "values", void 0);
 
 var Targets_1;
 class TargetCert {
+    targetCertificate = new IssuerSerial();
+    targetName;
+    certDigestInfo;
     constructor(params = {}) {
-        this.targetCertificate = new IssuerSerial();
         Object.assign(this, params);
     }
 }
@@ -8483,24 +8924,37 @@ __decorate([
     AsnProp({ type: IssuerSerial })
 ], TargetCert.prototype, "targetCertificate", void 0);
 __decorate([
-    AsnProp({ type: GeneralName$1, optional: true })
+    AsnProp({
+        type: GeneralName$1, optional: true,
+    })
 ], TargetCert.prototype, "targetName", void 0);
 __decorate([
-    AsnProp({ type: ObjectDigestInfo, optional: true })
+    AsnProp({
+        type: ObjectDigestInfo, optional: true,
+    })
 ], TargetCert.prototype, "certDigestInfo", void 0);
 let Target = class Target {
+    targetName;
+    targetGroup;
+    targetCert;
     constructor(params = {}) {
         Object.assign(this, params);
     }
 };
 __decorate([
-    AsnProp({ type: GeneralName$1, context: 0, implicit: true })
+    AsnProp({
+        type: GeneralName$1, context: 0, implicit: true,
+    })
 ], Target.prototype, "targetName", void 0);
 __decorate([
-    AsnProp({ type: GeneralName$1, context: 1, implicit: true })
+    AsnProp({
+        type: GeneralName$1, context: 1, implicit: true,
+    })
 ], Target.prototype, "targetGroup", void 0);
 __decorate([
-    AsnProp({ type: TargetCert, context: 2, implicit: true })
+    AsnProp({
+        type: TargetCert, context: 2, implicit: true,
+    })
 ], Target.prototype, "targetCert", void 0);
 Target = __decorate([
     AsnType({ type: AsnTypeTypes.Choice })
@@ -8512,7 +8966,9 @@ let Targets = Targets_1 = class Targets extends AsnArray {
     }
 };
 Targets = Targets_1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Sequence, itemType: Target })
+    AsnType({
+        type: AsnTypeTypes.Sequence, itemType: Target,
+    })
 ], Targets);
 
 var ProxyInfo_1;
@@ -8523,25 +8979,34 @@ let ProxyInfo = ProxyInfo_1 = class ProxyInfo extends AsnArray {
     }
 };
 ProxyInfo = ProxyInfo_1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Sequence, itemType: Targets })
+    AsnType({
+        type: AsnTypeTypes.Sequence, itemType: Targets,
+    })
 ], ProxyInfo);
 
 class RoleSyntax {
+    roleAuthority;
+    roleName;
     constructor(params = {}) {
         Object.assign(this, params);
     }
 }
 __decorate([
-    AsnProp({ type: GeneralNames$1, implicit: true, context: 0, optional: true })
+    AsnProp({
+        type: GeneralNames$1, implicit: true, context: 0, optional: true,
+    })
 ], RoleSyntax.prototype, "roleAuthority", void 0);
 __decorate([
-    AsnProp({ type: GeneralName$1, implicit: true, context: 1 })
+    AsnProp({
+        type: GeneralName$1, implicit: true, context: 1,
+    })
 ], RoleSyntax.prototype, "roleName", void 0);
 
 class SvceAuthInfo {
+    service = new GeneralName$1();
+    ident = new GeneralName$1();
+    authInfo;
     constructor(params = {}) {
-        this.service = new GeneralName$1();
-        this.ident = new GeneralName$1();
         Object.assign(this, params);
     }
 }
@@ -8552,14 +9017,16 @@ __decorate([
     AsnProp({ type: GeneralName$1 })
 ], SvceAuthInfo.prototype, "ident", void 0);
 __decorate([
-    AsnProp({ type: OctetString, optional: true })
+    AsnProp({
+        type: OctetString, optional: true,
+    })
 ], SvceAuthInfo.prototype, "authInfo", void 0);
 
 var CertificateSet_1;
 class OtherCertificateFormat {
+    otherCertFormat = "";
+    otherCert = new ArrayBuffer(0);
     constructor(params = {}) {
-        this.otherCertFormat = "";
-        this.otherCert = new ArrayBuffer(0);
         Object.assign(this, params);
     }
 }
@@ -8570,6 +9037,9 @@ __decorate([
     AsnProp({ type: AsnPropTypes.Any })
 ], OtherCertificateFormat.prototype, "otherCert", void 0);
 let CertificateChoices = class CertificateChoices {
+    certificate;
+    v2AttrCert;
+    other;
     constructor(params = {}) {
         Object.assign(this, params);
     }
@@ -8578,10 +9048,14 @@ __decorate([
     AsnProp({ type: Certificate })
 ], CertificateChoices.prototype, "certificate", void 0);
 __decorate([
-    AsnProp({ type: AttributeCertificate, context: 2, implicit: true })
+    AsnProp({
+        type: AttributeCertificate, context: 2, implicit: true,
+    })
 ], CertificateChoices.prototype, "v2AttrCert", void 0);
 __decorate([
-    AsnProp({ type: OtherCertificateFormat, context: 3, implicit: true })
+    AsnProp({
+        type: OtherCertificateFormat, context: 3, implicit: true,
+    })
 ], CertificateChoices.prototype, "other", void 0);
 CertificateChoices = __decorate([
     AsnType({ type: AsnTypeTypes.Choice })
@@ -8593,13 +9067,15 @@ let CertificateSet = CertificateSet_1 = class CertificateSet extends AsnArray {
     }
 };
 CertificateSet = CertificateSet_1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Set, itemType: CertificateChoices })
+    AsnType({
+        type: AsnTypeTypes.Set, itemType: CertificateChoices,
+    })
 ], CertificateSet);
 
 class ContentInfo {
+    contentType = "";
+    content = new ArrayBuffer(0);
     constructor(params = {}) {
-        this.contentType = "";
-        this.content = new ArrayBuffer(0);
         Object.assign(this, params);
     }
 }
@@ -8607,10 +9083,14 @@ __decorate([
     AsnProp({ type: AsnPropTypes.ObjectIdentifier })
 ], ContentInfo.prototype, "contentType", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Any, context: 0 })
+    AsnProp({
+        type: AsnPropTypes.Any, context: 0,
+    })
 ], ContentInfo.prototype, "content", void 0);
 
 let EncapsulatedContent = class EncapsulatedContent {
+    single;
+    any;
     constructor(params = {}) {
         Object.assign(this, params);
     }
@@ -8625,8 +9105,9 @@ EncapsulatedContent = __decorate([
     AsnType({ type: AsnTypeTypes.Choice })
 ], EncapsulatedContent);
 class EncapsulatedContentInfo {
+    eContentType = "";
+    eContent;
     constructor(params = {}) {
-        this.eContentType = "";
         Object.assign(this, params);
     }
 }
@@ -8634,16 +9115,22 @@ __decorate([
     AsnProp({ type: AsnPropTypes.ObjectIdentifier })
 ], EncapsulatedContentInfo.prototype, "eContentType", void 0);
 __decorate([
-    AsnProp({ type: EncapsulatedContent, context: 0, optional: true })
+    AsnProp({
+        type: EncapsulatedContent, context: 0, optional: true,
+    })
 ], EncapsulatedContentInfo.prototype, "eContent", void 0);
 
 let EncryptedContent = class EncryptedContent {
+    value;
+    constructedValue;
     constructor(params = {}) {
         Object.assign(this, params);
     }
 };
 __decorate([
-    AsnProp({ type: OctetString, context: 0, implicit: true, optional: true })
+    AsnProp({
+        type: OctetString, context: 0, implicit: true, optional: true,
+    })
 ], EncryptedContent.prototype, "value", void 0);
 __decorate([
     AsnProp({
@@ -8659,9 +9146,10 @@ EncryptedContent = __decorate([
     AsnType({ type: AsnTypeTypes.Choice })
 ], EncryptedContent);
 class EncryptedContentInfo {
+    contentType = "";
+    contentEncryptionAlgorithm = new ContentEncryptionAlgorithmIdentifier();
+    encryptedContent;
     constructor(params = {}) {
-        this.contentType = "";
-        this.contentEncryptionAlgorithm = new ContentEncryptionAlgorithmIdentifier();
         Object.assign(this, params);
     }
 }
@@ -8672,12 +9160,15 @@ __decorate([
     AsnProp({ type: ContentEncryptionAlgorithmIdentifier })
 ], EncryptedContentInfo.prototype, "contentEncryptionAlgorithm", void 0);
 __decorate([
-    AsnProp({ type: EncryptedContent, optional: true })
+    AsnProp({
+        type: EncryptedContent, optional: true,
+    })
 ], EncryptedContentInfo.prototype, "encryptedContent", void 0);
 
 class OtherKeyAttribute {
+    keyAttrId = "";
+    keyAttr;
     constructor(params = {}) {
-        this.keyAttrId = "";
         Object.assign(this, params);
     }
 }
@@ -8685,13 +9176,17 @@ __decorate([
     AsnProp({ type: AsnPropTypes.ObjectIdentifier })
 ], OtherKeyAttribute.prototype, "keyAttrId", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Any, optional: true })
+    AsnProp({
+        type: AsnPropTypes.Any, optional: true,
+    })
 ], OtherKeyAttribute.prototype, "keyAttr", void 0);
 
 var RecipientEncryptedKeys_1;
 class RecipientKeyIdentifier {
+    subjectKeyIdentifier = new SubjectKeyIdentifier();
+    date;
+    other;
     constructor(params = {}) {
-        this.subjectKeyIdentifier = new SubjectKeyIdentifier();
         Object.assign(this, params);
     }
 }
@@ -8699,29 +9194,39 @@ __decorate([
     AsnProp({ type: SubjectKeyIdentifier })
 ], RecipientKeyIdentifier.prototype, "subjectKeyIdentifier", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.GeneralizedTime, optional: true })
+    AsnProp({
+        type: AsnPropTypes.GeneralizedTime, optional: true,
+    })
 ], RecipientKeyIdentifier.prototype, "date", void 0);
 __decorate([
-    AsnProp({ type: OtherKeyAttribute, optional: true })
+    AsnProp({
+        type: OtherKeyAttribute, optional: true,
+    })
 ], RecipientKeyIdentifier.prototype, "other", void 0);
 let KeyAgreeRecipientIdentifier = class KeyAgreeRecipientIdentifier {
+    rKeyId;
+    issuerAndSerialNumber;
     constructor(params = {}) {
         Object.assign(this, params);
     }
 };
 __decorate([
-    AsnProp({ type: RecipientKeyIdentifier, context: 0, implicit: true, optional: true })
+    AsnProp({
+        type: RecipientKeyIdentifier, context: 0, implicit: true, optional: true,
+    })
 ], KeyAgreeRecipientIdentifier.prototype, "rKeyId", void 0);
 __decorate([
-    AsnProp({ type: IssuerAndSerialNumber, optional: true })
+    AsnProp({
+        type: IssuerAndSerialNumber, optional: true,
+    })
 ], KeyAgreeRecipientIdentifier.prototype, "issuerAndSerialNumber", void 0);
 KeyAgreeRecipientIdentifier = __decorate([
     AsnType({ type: AsnTypeTypes.Choice })
 ], KeyAgreeRecipientIdentifier);
 class RecipientEncryptedKey {
+    rid = new KeyAgreeRecipientIdentifier();
+    encryptedKey = new OctetString();
     constructor(params = {}) {
-        this.rid = new KeyAgreeRecipientIdentifier();
-        this.encryptedKey = new OctetString();
         Object.assign(this, params);
     }
 }
@@ -8738,12 +9243,14 @@ let RecipientEncryptedKeys = RecipientEncryptedKeys_1 = class RecipientEncrypted
     }
 };
 RecipientEncryptedKeys = RecipientEncryptedKeys_1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Sequence, itemType: RecipientEncryptedKey })
+    AsnType({
+        type: AsnTypeTypes.Sequence, itemType: RecipientEncryptedKey,
+    })
 ], RecipientEncryptedKeys);
 class OriginatorPublicKey {
+    algorithm = new AlgorithmIdentifier();
+    publicKey = new ArrayBuffer(0);
     constructor(params = {}) {
-        this.algorithm = new AlgorithmIdentifier();
-        this.publicKey = new ArrayBuffer(0);
         Object.assign(this, params);
     }
 }
@@ -8754,28 +9261,38 @@ __decorate([
     AsnProp({ type: AsnPropTypes.BitString })
 ], OriginatorPublicKey.prototype, "publicKey", void 0);
 let OriginatorIdentifierOrKey = class OriginatorIdentifierOrKey {
+    subjectKeyIdentifier;
+    originatorKey;
+    issuerAndSerialNumber;
     constructor(params = {}) {
         Object.assign(this, params);
     }
 };
 __decorate([
-    AsnProp({ type: SubjectKeyIdentifier, context: 0, implicit: true, optional: true })
+    AsnProp({
+        type: SubjectKeyIdentifier, context: 0, implicit: true, optional: true,
+    })
 ], OriginatorIdentifierOrKey.prototype, "subjectKeyIdentifier", void 0);
 __decorate([
-    AsnProp({ type: OriginatorPublicKey, context: 1, implicit: true, optional: true })
+    AsnProp({
+        type: OriginatorPublicKey, context: 1, implicit: true, optional: true,
+    })
 ], OriginatorIdentifierOrKey.prototype, "originatorKey", void 0);
 __decorate([
-    AsnProp({ type: IssuerAndSerialNumber, optional: true })
+    AsnProp({
+        type: IssuerAndSerialNumber, optional: true,
+    })
 ], OriginatorIdentifierOrKey.prototype, "issuerAndSerialNumber", void 0);
 OriginatorIdentifierOrKey = __decorate([
     AsnType({ type: AsnTypeTypes.Choice })
 ], OriginatorIdentifierOrKey);
 class KeyAgreeRecipientInfo {
+    version = CMSVersion.v3;
+    originator = new OriginatorIdentifierOrKey();
+    ukm;
+    keyEncryptionAlgorithm = new KeyEncryptionAlgorithmIdentifier();
+    recipientEncryptedKeys = new RecipientEncryptedKeys();
     constructor(params = {}) {
-        this.version = CMSVersion.v3;
-        this.originator = new OriginatorIdentifierOrKey();
-        this.keyEncryptionAlgorithm = new KeyEncryptionAlgorithmIdentifier();
-        this.recipientEncryptedKeys = new RecipientEncryptedKeys();
         Object.assign(this, params);
     }
 }
@@ -8783,10 +9300,14 @@ __decorate([
     AsnProp({ type: AsnPropTypes.Integer })
 ], KeyAgreeRecipientInfo.prototype, "version", void 0);
 __decorate([
-    AsnProp({ type: OriginatorIdentifierOrKey, context: 0 })
+    AsnProp({
+        type: OriginatorIdentifierOrKey, context: 0,
+    })
 ], KeyAgreeRecipientInfo.prototype, "originator", void 0);
 __decorate([
-    AsnProp({ type: OctetString, context: 1, optional: true })
+    AsnProp({
+        type: OctetString, context: 1, optional: true,
+    })
 ], KeyAgreeRecipientInfo.prototype, "ukm", void 0);
 __decorate([
     AsnProp({ type: KeyEncryptionAlgorithmIdentifier })
@@ -8796,12 +9317,16 @@ __decorate([
 ], KeyAgreeRecipientInfo.prototype, "recipientEncryptedKeys", void 0);
 
 let RecipientIdentifier = class RecipientIdentifier {
+    subjectKeyIdentifier;
+    issuerAndSerialNumber;
     constructor(params = {}) {
         Object.assign(this, params);
     }
 };
 __decorate([
-    AsnProp({ type: SubjectKeyIdentifier, context: 0, implicit: true })
+    AsnProp({
+        type: SubjectKeyIdentifier, context: 0, implicit: true,
+    })
 ], RecipientIdentifier.prototype, "subjectKeyIdentifier", void 0);
 __decorate([
     AsnProp({ type: IssuerAndSerialNumber })
@@ -8810,11 +9335,11 @@ RecipientIdentifier = __decorate([
     AsnType({ type: AsnTypeTypes.Choice })
 ], RecipientIdentifier);
 class KeyTransRecipientInfo {
+    version = CMSVersion.v0;
+    rid = new RecipientIdentifier();
+    keyEncryptionAlgorithm = new KeyEncryptionAlgorithmIdentifier();
+    encryptedKey = new OctetString();
     constructor(params = {}) {
-        this.version = CMSVersion.v0;
-        this.rid = new RecipientIdentifier();
-        this.keyEncryptionAlgorithm = new KeyEncryptionAlgorithmIdentifier();
-        this.encryptedKey = new OctetString();
         Object.assign(this, params);
     }
 }
@@ -8832,8 +9357,10 @@ __decorate([
 ], KeyTransRecipientInfo.prototype, "encryptedKey", void 0);
 
 class KEKIdentifier {
+    keyIdentifier = new OctetString();
+    date;
+    other;
     constructor(params = {}) {
-        this.keyIdentifier = new OctetString();
         Object.assign(this, params);
     }
 }
@@ -8841,17 +9368,21 @@ __decorate([
     AsnProp({ type: OctetString })
 ], KEKIdentifier.prototype, "keyIdentifier", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.GeneralizedTime, optional: true })
+    AsnProp({
+        type: AsnPropTypes.GeneralizedTime, optional: true,
+    })
 ], KEKIdentifier.prototype, "date", void 0);
 __decorate([
-    AsnProp({ type: OtherKeyAttribute, optional: true })
+    AsnProp({
+        type: OtherKeyAttribute, optional: true,
+    })
 ], KEKIdentifier.prototype, "other", void 0);
 class KEKRecipientInfo {
+    version = CMSVersion.v4;
+    kekid = new KEKIdentifier();
+    keyEncryptionAlgorithm = new KeyEncryptionAlgorithmIdentifier();
+    encryptedKey = new OctetString();
     constructor(params = {}) {
-        this.version = CMSVersion.v4;
-        this.kekid = new KEKIdentifier();
-        this.keyEncryptionAlgorithm = new KeyEncryptionAlgorithmIdentifier();
-        this.encryptedKey = new OctetString();
         Object.assign(this, params);
     }
 }
@@ -8869,10 +9400,11 @@ __decorate([
 ], KEKRecipientInfo.prototype, "encryptedKey", void 0);
 
 class PasswordRecipientInfo {
+    version = CMSVersion.v0;
+    keyDerivationAlgorithm;
+    keyEncryptionAlgorithm = new KeyEncryptionAlgorithmIdentifier();
+    encryptedKey = new OctetString();
     constructor(params = {}) {
-        this.version = CMSVersion.v0;
-        this.keyEncryptionAlgorithm = new KeyEncryptionAlgorithmIdentifier();
-        this.encryptedKey = new OctetString();
         Object.assign(this, params);
     }
 }
@@ -8880,7 +9412,9 @@ __decorate([
     AsnProp({ type: AsnPropTypes.Integer })
 ], PasswordRecipientInfo.prototype, "version", void 0);
 __decorate([
-    AsnProp({ type: KeyDerivationAlgorithmIdentifier, context: 0, optional: true })
+    AsnProp({
+        type: KeyDerivationAlgorithmIdentifier, context: 0, optional: true,
+    })
 ], PasswordRecipientInfo.prototype, "keyDerivationAlgorithm", void 0);
 __decorate([
     AsnProp({ type: KeyEncryptionAlgorithmIdentifier })
@@ -8890,9 +9424,9 @@ __decorate([
 ], PasswordRecipientInfo.prototype, "encryptedKey", void 0);
 
 class OtherRecipientInfo {
+    oriType = "";
+    oriValue = new ArrayBuffer(0);
     constructor(params = {}) {
-        this.oriType = "";
-        this.oriValue = new ArrayBuffer(0);
         Object.assign(this, params);
     }
 }
@@ -8903,24 +9437,39 @@ __decorate([
     AsnProp({ type: AsnPropTypes.Any })
 ], OtherRecipientInfo.prototype, "oriValue", void 0);
 let RecipientInfo = class RecipientInfo {
+    ktri;
+    kari;
+    kekri;
+    pwri;
+    ori;
     constructor(params = {}) {
         Object.assign(this, params);
     }
 };
 __decorate([
-    AsnProp({ type: KeyTransRecipientInfo, optional: true })
+    AsnProp({
+        type: KeyTransRecipientInfo, optional: true,
+    })
 ], RecipientInfo.prototype, "ktri", void 0);
 __decorate([
-    AsnProp({ type: KeyAgreeRecipientInfo, context: 1, implicit: true, optional: true })
+    AsnProp({
+        type: KeyAgreeRecipientInfo, context: 1, implicit: true, optional: true,
+    })
 ], RecipientInfo.prototype, "kari", void 0);
 __decorate([
-    AsnProp({ type: KEKRecipientInfo, context: 2, implicit: true, optional: true })
+    AsnProp({
+        type: KEKRecipientInfo, context: 2, implicit: true, optional: true,
+    })
 ], RecipientInfo.prototype, "kekri", void 0);
 __decorate([
-    AsnProp({ type: PasswordRecipientInfo, context: 3, implicit: true, optional: true })
+    AsnProp({
+        type: PasswordRecipientInfo, context: 3, implicit: true, optional: true,
+    })
 ], RecipientInfo.prototype, "pwri", void 0);
 __decorate([
-    AsnProp({ type: OtherRecipientInfo, context: 4, implicit: true, optional: true })
+    AsnProp({
+        type: OtherRecipientInfo, context: 4, implicit: true, optional: true,
+    })
 ], RecipientInfo.prototype, "ori", void 0);
 RecipientInfo = __decorate([
     AsnType({ type: AsnTypeTypes.Choice })
@@ -8934,14 +9483,16 @@ let RecipientInfos = RecipientInfos_1 = class RecipientInfos extends AsnArray {
     }
 };
 RecipientInfos = RecipientInfos_1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Set, itemType: RecipientInfo })
+    AsnType({
+        type: AsnTypeTypes.Set, itemType: RecipientInfo,
+    })
 ], RecipientInfos);
 
 var RevocationInfoChoices_1;
 class OtherRevocationInfoFormat {
+    otherRevInfoFormat = "";
+    otherRevInfo = new ArrayBuffer(0);
     constructor(params = {}) {
-        this.otherRevInfoFormat = "";
-        this.otherRevInfo = new ArrayBuffer(0);
         Object.assign(this, params);
     }
 }
@@ -8952,13 +9503,15 @@ __decorate([
     AsnProp({ type: AsnPropTypes.Any })
 ], OtherRevocationInfoFormat.prototype, "otherRevInfo", void 0);
 let RevocationInfoChoice = class RevocationInfoChoice {
+    other = new OtherRevocationInfoFormat();
     constructor(params = {}) {
-        this.other = new OtherRevocationInfoFormat();
         Object.assign(this, params);
     }
 };
 __decorate([
-    AsnProp({ type: OtherRevocationInfoFormat, context: 1, implicit: true })
+    AsnProp({
+        type: OtherRevocationInfoFormat, context: 1, implicit: true,
+    })
 ], RevocationInfoChoice.prototype, "other", void 0);
 RevocationInfoChoice = __decorate([
     AsnType({ type: AsnTypeTypes.Choice })
@@ -8970,19 +9523,27 @@ let RevocationInfoChoices = RevocationInfoChoices_1 = class RevocationInfoChoice
     }
 };
 RevocationInfoChoices = RevocationInfoChoices_1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Set, itemType: RevocationInfoChoice })
+    AsnType({
+        type: AsnTypeTypes.Set, itemType: RevocationInfoChoice,
+    })
 ], RevocationInfoChoices);
 
 class OriginatorInfo {
+    certs;
+    crls;
     constructor(params = {}) {
         Object.assign(this, params);
     }
 }
 __decorate([
-    AsnProp({ type: CertificateSet, context: 0, implicit: true, optional: true })
+    AsnProp({
+        type: CertificateSet, context: 0, implicit: true, optional: true,
+    })
 ], OriginatorInfo.prototype, "certs", void 0);
 __decorate([
-    AsnProp({ type: RevocationInfoChoices, context: 1, implicit: true, optional: true })
+    AsnProp({
+        type: RevocationInfoChoices, context: 1, implicit: true, optional: true,
+    })
 ], OriginatorInfo.prototype, "crls", void 0);
 
 var UnprotectedAttributes_1;
@@ -8993,13 +9554,17 @@ let UnprotectedAttributes = UnprotectedAttributes_1 = class UnprotectedAttribute
     }
 };
 UnprotectedAttributes = UnprotectedAttributes_1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Set, itemType: Attribute$1 })
+    AsnType({
+        type: AsnTypeTypes.Set, itemType: Attribute$1,
+    })
 ], UnprotectedAttributes);
 class EnvelopedData {
+    version = CMSVersion.v0;
+    originatorInfo;
+    recipientInfos = new RecipientInfos();
+    encryptedContentInfo = new EncryptedContentInfo();
+    unprotectedAttrs;
     constructor(params = {}) {
-        this.version = CMSVersion.v0;
-        this.recipientInfos = new RecipientInfos();
-        this.encryptedContentInfo = new EncryptedContentInfo();
         Object.assign(this, params);
     }
 }
@@ -9007,7 +9572,9 @@ __decorate([
     AsnProp({ type: AsnPropTypes.Integer })
 ], EnvelopedData.prototype, "version", void 0);
 __decorate([
-    AsnProp({ type: OriginatorInfo, context: 0, implicit: true, optional: true })
+    AsnProp({
+        type: OriginatorInfo, context: 0, implicit: true, optional: true,
+    })
 ], EnvelopedData.prototype, "originatorInfo", void 0);
 __decorate([
     AsnProp({ type: RecipientInfos })
@@ -9016,7 +9583,9 @@ __decorate([
     AsnProp({ type: EncryptedContentInfo })
 ], EnvelopedData.prototype, "encryptedContentInfo", void 0);
 __decorate([
-    AsnProp({ type: UnprotectedAttributes, context: 1, implicit: true, optional: true })
+    AsnProp({
+        type: UnprotectedAttributes, context: 1, implicit: true, optional: true,
+    })
 ], EnvelopedData.prototype, "unprotectedAttrs", void 0);
 
 const id_data = "1.2.840.113549.1.7.1";
@@ -9030,14 +9599,18 @@ let DigestAlgorithmIdentifiers = DigestAlgorithmIdentifiers_1 = class DigestAlgo
     }
 };
 DigestAlgorithmIdentifiers = DigestAlgorithmIdentifiers_1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Set, itemType: DigestAlgorithmIdentifier })
+    AsnType({
+        type: AsnTypeTypes.Set, itemType: DigestAlgorithmIdentifier,
+    })
 ], DigestAlgorithmIdentifiers);
 class SignedData {
+    version = CMSVersion.v0;
+    digestAlgorithms = new DigestAlgorithmIdentifiers();
+    encapContentInfo = new EncapsulatedContentInfo();
+    certificates;
+    crls;
+    signerInfos = new SignerInfos();
     constructor(params = {}) {
-        this.version = CMSVersion.v0;
-        this.digestAlgorithms = new DigestAlgorithmIdentifiers();
-        this.encapContentInfo = new EncapsulatedContentInfo();
-        this.signerInfos = new SignerInfos();
         Object.assign(this, params);
     }
 }
@@ -9051,10 +9624,14 @@ __decorate([
     AsnProp({ type: EncapsulatedContentInfo })
 ], SignedData.prototype, "encapContentInfo", void 0);
 __decorate([
-    AsnProp({ type: CertificateSet, context: 0, implicit: true, optional: true })
+    AsnProp({
+        type: CertificateSet, context: 0, implicit: true, optional: true,
+    })
 ], SignedData.prototype, "certificates", void 0);
 __decorate([
-    AsnProp({ type: RevocationInfoChoices, context: 1, implicit: true, optional: true })
+    AsnProp({
+        type: RevocationInfoChoices, context: 1, implicit: true, optional: true,
+    })
 ], SignedData.prototype, "crls", void 0);
 __decorate([
     AsnProp({ type: SignerInfos })
@@ -9080,6 +9657,8 @@ const ecdsaWithSHA384 = create$1(id_ecdsaWithSHA384);
 const ecdsaWithSHA512 = create$1(id_ecdsaWithSHA512);
 
 let FieldID = class FieldID {
+    fieldType;
+    parameters;
     constructor(params = {}) {
         Object.assign(this, params);
     }
@@ -9096,6 +9675,9 @@ FieldID = __decorate([
 class ECPoint extends OctetString {
 }
 let Curve = class Curve {
+    a;
+    b;
+    seed;
     constructor(params = {}) {
         Object.assign(this, params);
     }
@@ -9107,7 +9689,9 @@ __decorate([
     AsnProp({ type: AsnPropTypes.OctetString })
 ], Curve.prototype, "b", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.BitString, optional: true })
+    AsnProp({
+        type: AsnPropTypes.BitString, optional: true,
+    })
 ], Curve.prototype, "seed", void 0);
 Curve = __decorate([
     AsnType({ type: AsnTypeTypes.Sequence })
@@ -9117,8 +9701,13 @@ var ECPVer;
     ECPVer[ECPVer["ecpVer1"] = 1] = "ecpVer1";
 })(ECPVer || (ECPVer = {}));
 let SpecifiedECDomain = class SpecifiedECDomain {
+    version = ECPVer.ecpVer1;
+    fieldID;
+    curve;
+    base;
+    order;
+    cofactor;
     constructor(params = {}) {
-        this.version = ECPVer.ecpVer1;
         Object.assign(this, params);
     }
 };
@@ -9135,16 +9724,23 @@ __decorate([
     AsnProp({ type: ECPoint })
 ], SpecifiedECDomain.prototype, "base", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter })
+    AsnProp({
+        type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter,
+    })
 ], SpecifiedECDomain.prototype, "order", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, optional: true })
+    AsnProp({
+        type: AsnPropTypes.Integer, optional: true,
+    })
 ], SpecifiedECDomain.prototype, "cofactor", void 0);
 SpecifiedECDomain = __decorate([
     AsnType({ type: AsnTypeTypes.Sequence })
 ], SpecifiedECDomain);
 
 let ECParameters = class ECParameters {
+    namedCurve;
+    implicitCurve;
+    specifiedCurve;
     constructor(params = {}) {
         Object.assign(this, params);
     }
@@ -9163,9 +9759,11 @@ ECParameters = __decorate([
 ], ECParameters);
 
 class ECPrivateKey {
+    version = 1;
+    privateKey = new OctetString();
+    parameters;
+    publicKey;
     constructor(params = {}) {
-        this.version = 1;
-        this.privateKey = new OctetString();
         Object.assign(this, params);
     }
 }
@@ -9176,24 +9774,32 @@ __decorate([
     AsnProp({ type: OctetString })
 ], ECPrivateKey.prototype, "privateKey", void 0);
 __decorate([
-    AsnProp({ type: ECParameters, context: 0, optional: true })
+    AsnProp({
+        type: ECParameters, context: 0, optional: true,
+    })
 ], ECPrivateKey.prototype, "parameters", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.BitString, context: 1, optional: true })
+    AsnProp({
+        type: AsnPropTypes.BitString, context: 1, optional: true,
+    })
 ], ECPrivateKey.prototype, "publicKey", void 0);
 
 class ECDSASigValue {
+    r = new ArrayBuffer(0);
+    s = new ArrayBuffer(0);
     constructor(params = {}) {
-        this.r = new ArrayBuffer(0);
-        this.s = new ArrayBuffer(0);
         Object.assign(this, params);
     }
 }
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter })
+    AsnProp({
+        type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter,
+    })
 ], ECDSASigValue.prototype, "r", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter })
+    AsnProp({
+        type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter,
+    })
 ], ECDSASigValue.prototype, "s", void 0);
 
 const id_pkcs_1 = "1.2.840.113549.1.1";
@@ -9222,7 +9828,9 @@ const id_md5 = "1.2.840.113549.2.5";
 const id_mgf1 = `${id_pkcs_1}.8`;
 
 function create(algorithm) {
-    return new AlgorithmIdentifier({ algorithm, parameters: null });
+    return new AlgorithmIdentifier({
+        algorithm, parameters: null,
+    });
 }
 create(id_md2);
 create(id_md5);
@@ -9256,24 +9864,30 @@ create(id_sha512_224WithRSAEncryption);
 create(id_sha512_256WithRSAEncryption);
 
 class RsaEsOaepParams {
+    hashAlgorithm = new AlgorithmIdentifier(sha1$1);
+    maskGenAlgorithm = new AlgorithmIdentifier({
+        algorithm: id_mgf1,
+        parameters: AsnConvert.serialize(sha1$1),
+    });
+    pSourceAlgorithm = new AlgorithmIdentifier(pSpecifiedEmpty);
     constructor(params = {}) {
-        this.hashAlgorithm = new AlgorithmIdentifier(sha1$1);
-        this.maskGenAlgorithm = new AlgorithmIdentifier({
-            algorithm: id_mgf1,
-            parameters: AsnConvert.serialize(sha1$1),
-        });
-        this.pSourceAlgorithm = new AlgorithmIdentifier(pSpecifiedEmpty);
         Object.assign(this, params);
     }
 }
 __decorate([
-    AsnProp({ type: AlgorithmIdentifier, context: 0, defaultValue: sha1$1 })
+    AsnProp({
+        type: AlgorithmIdentifier, context: 0, defaultValue: sha1$1,
+    })
 ], RsaEsOaepParams.prototype, "hashAlgorithm", void 0);
 __decorate([
-    AsnProp({ type: AlgorithmIdentifier, context: 1, defaultValue: mgf1SHA1 })
+    AsnProp({
+        type: AlgorithmIdentifier, context: 1, defaultValue: mgf1SHA1,
+    })
 ], RsaEsOaepParams.prototype, "maskGenAlgorithm", void 0);
 __decorate([
-    AsnProp({ type: AlgorithmIdentifier, context: 2, defaultValue: pSpecifiedEmpty })
+    AsnProp({
+        type: AlgorithmIdentifier, context: 2, defaultValue: pSpecifiedEmpty,
+    })
 ], RsaEsOaepParams.prototype, "pSourceAlgorithm", void 0);
 new AlgorithmIdentifier({
     algorithm: id_RSAES_OAEP,
@@ -9281,28 +9895,36 @@ new AlgorithmIdentifier({
 });
 
 class RsaSaPssParams {
+    hashAlgorithm = new AlgorithmIdentifier(sha1$1);
+    maskGenAlgorithm = new AlgorithmIdentifier({
+        algorithm: id_mgf1,
+        parameters: AsnConvert.serialize(sha1$1),
+    });
+    saltLength = 20;
+    trailerField = 1;
     constructor(params = {}) {
-        this.hashAlgorithm = new AlgorithmIdentifier(sha1$1);
-        this.maskGenAlgorithm = new AlgorithmIdentifier({
-            algorithm: id_mgf1,
-            parameters: AsnConvert.serialize(sha1$1),
-        });
-        this.saltLength = 20;
-        this.trailerField = 1;
         Object.assign(this, params);
     }
 }
 __decorate([
-    AsnProp({ type: AlgorithmIdentifier, context: 0, defaultValue: sha1$1 })
+    AsnProp({
+        type: AlgorithmIdentifier, context: 0, defaultValue: sha1$1,
+    })
 ], RsaSaPssParams.prototype, "hashAlgorithm", void 0);
 __decorate([
-    AsnProp({ type: AlgorithmIdentifier, context: 1, defaultValue: mgf1SHA1 })
+    AsnProp({
+        type: AlgorithmIdentifier, context: 1, defaultValue: mgf1SHA1,
+    })
 ], RsaSaPssParams.prototype, "maskGenAlgorithm", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, context: 2, defaultValue: 20 })
+    AsnProp({
+        type: AsnPropTypes.Integer, context: 2, defaultValue: 20,
+    })
 ], RsaSaPssParams.prototype, "saltLength", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, context: 3, defaultValue: 1 })
+    AsnProp({
+        type: AsnPropTypes.Integer, context: 3, defaultValue: 1,
+    })
 ], RsaSaPssParams.prototype, "trailerField", void 0);
 new AlgorithmIdentifier({
     algorithm: id_RSASSA_PSS,
@@ -9310,9 +9932,9 @@ new AlgorithmIdentifier({
 });
 
 class DigestInfo {
+    digestAlgorithm = new AlgorithmIdentifier();
+    digest = new OctetString();
     constructor(params = {}) {
-        this.digestAlgorithm = new AlgorithmIdentifier();
-        this.digest = new OctetString();
         Object.assign(this, params);
     }
 }
@@ -9325,21 +9947,27 @@ __decorate([
 
 var OtherPrimeInfos_1;
 class OtherPrimeInfo {
+    prime = new ArrayBuffer(0);
+    exponent = new ArrayBuffer(0);
+    coefficient = new ArrayBuffer(0);
     constructor(params = {}) {
-        this.prime = new ArrayBuffer(0);
-        this.exponent = new ArrayBuffer(0);
-        this.coefficient = new ArrayBuffer(0);
         Object.assign(this, params);
     }
 }
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter })
+    AsnProp({
+        type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter,
+    })
 ], OtherPrimeInfo.prototype, "prime", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter })
+    AsnProp({
+        type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter,
+    })
 ], OtherPrimeInfo.prototype, "exponent", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter })
+    AsnProp({
+        type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter,
+    })
 ], OtherPrimeInfo.prototype, "coefficient", void 0);
 let OtherPrimeInfos = OtherPrimeInfos_1 = class OtherPrimeInfos extends AsnArray {
     constructor(items) {
@@ -9348,20 +9976,23 @@ let OtherPrimeInfos = OtherPrimeInfos_1 = class OtherPrimeInfos extends AsnArray
     }
 };
 OtherPrimeInfos = OtherPrimeInfos_1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Sequence, itemType: OtherPrimeInfo })
+    AsnType({
+        type: AsnTypeTypes.Sequence, itemType: OtherPrimeInfo,
+    })
 ], OtherPrimeInfos);
 
 class RSAPrivateKey {
+    version = 0;
+    modulus = new ArrayBuffer(0);
+    publicExponent = new ArrayBuffer(0);
+    privateExponent = new ArrayBuffer(0);
+    prime1 = new ArrayBuffer(0);
+    prime2 = new ArrayBuffer(0);
+    exponent1 = new ArrayBuffer(0);
+    exponent2 = new ArrayBuffer(0);
+    coefficient = new ArrayBuffer(0);
+    otherPrimeInfos;
     constructor(params = {}) {
-        this.version = 0;
-        this.modulus = new ArrayBuffer(0);
-        this.publicExponent = new ArrayBuffer(0);
-        this.privateExponent = new ArrayBuffer(0);
-        this.prime1 = new ArrayBuffer(0);
-        this.prime2 = new ArrayBuffer(0);
-        this.exponent1 = new ArrayBuffer(0);
-        this.exponent2 = new ArrayBuffer(0);
-        this.coefficient = new ArrayBuffer(0);
         Object.assign(this, params);
     }
 }
@@ -9369,45 +10000,67 @@ __decorate([
     AsnProp({ type: AsnPropTypes.Integer })
 ], RSAPrivateKey.prototype, "version", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter })
+    AsnProp({
+        type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter,
+    })
 ], RSAPrivateKey.prototype, "modulus", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter })
+    AsnProp({
+        type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter,
+    })
 ], RSAPrivateKey.prototype, "publicExponent", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter })
+    AsnProp({
+        type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter,
+    })
 ], RSAPrivateKey.prototype, "privateExponent", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter })
+    AsnProp({
+        type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter,
+    })
 ], RSAPrivateKey.prototype, "prime1", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter })
+    AsnProp({
+        type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter,
+    })
 ], RSAPrivateKey.prototype, "prime2", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter })
+    AsnProp({
+        type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter,
+    })
 ], RSAPrivateKey.prototype, "exponent1", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter })
+    AsnProp({
+        type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter,
+    })
 ], RSAPrivateKey.prototype, "exponent2", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter })
+    AsnProp({
+        type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter,
+    })
 ], RSAPrivateKey.prototype, "coefficient", void 0);
 __decorate([
-    AsnProp({ type: OtherPrimeInfos, optional: true })
+    AsnProp({
+        type: OtherPrimeInfos, optional: true,
+    })
 ], RSAPrivateKey.prototype, "otherPrimeInfos", void 0);
 
 class RSAPublicKey {
+    modulus = new ArrayBuffer(0);
+    publicExponent = new ArrayBuffer(0);
     constructor(params = {}) {
-        this.modulus = new ArrayBuffer(0);
-        this.publicExponent = new ArrayBuffer(0);
         Object.assign(this, params);
     }
 }
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter })
+    AsnProp({
+        type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter,
+    })
 ], RSAPublicKey.prototype, "modulus", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter })
+    AsnProp({
+        type: AsnPropTypes.Integer, converter: AsnIntegerArrayBufferConverter,
+    })
 ], RSAPublicKey.prototype, "publicExponent", void 0);
 
 var Lifecycle;
@@ -10134,9 +10787,9 @@ if (typeof Reflect === "undefined" || !Reflect.getMetadata) {
 
 var PKCS12AttrSet_1;
 class PKCS12Attribute {
+    attrId = "";
+    attrValues = [];
     constructor(params = {}) {
-        this.attrId = "";
-        this.attrValues = [];
         Object.assign(params);
     }
 }
@@ -10144,7 +10797,9 @@ __decorate([
     AsnProp({ type: AsnPropTypes.ObjectIdentifier })
 ], PKCS12Attribute.prototype, "attrId", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Any, repeated: "set" })
+    AsnProp({
+        type: AsnPropTypes.Any, repeated: "set",
+    })
 ], PKCS12Attribute.prototype, "attrValues", void 0);
 let PKCS12AttrSet = PKCS12AttrSet_1 = class PKCS12AttrSet extends AsnArray {
     constructor(items) {
@@ -10153,7 +10808,9 @@ let PKCS12AttrSet = PKCS12AttrSet_1 = class PKCS12AttrSet extends AsnArray {
     }
 };
 PKCS12AttrSet = PKCS12AttrSet_1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Sequence, itemType: PKCS12Attribute })
+    AsnType({
+        type: AsnTypeTypes.Sequence, itemType: PKCS12Attribute,
+    })
 ], PKCS12AttrSet);
 
 var AuthenticatedSafe_1;
@@ -10164,13 +10821,15 @@ let AuthenticatedSafe = AuthenticatedSafe_1 = class AuthenticatedSafe extends As
     }
 };
 AuthenticatedSafe = AuthenticatedSafe_1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Sequence, itemType: ContentInfo })
+    AsnType({
+        type: AsnTypeTypes.Sequence, itemType: ContentInfo,
+    })
 ], AuthenticatedSafe);
 
 class CertBag {
+    certId = "";
+    certValue = new ArrayBuffer(0);
     constructor(params = {}) {
-        this.certId = "";
-        this.certValue = new ArrayBuffer(0);
         Object.assign(this, params);
     }
 }
@@ -10178,13 +10837,15 @@ __decorate([
     AsnProp({ type: AsnPropTypes.ObjectIdentifier })
 ], CertBag.prototype, "certId", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Any, context: 0 })
+    AsnProp({
+        type: AsnPropTypes.Any, context: 0,
+    })
 ], CertBag.prototype, "certValue", void 0);
 
 class CRLBag {
+    crlId = "";
+    crltValue = new ArrayBuffer(0);
     constructor(params = {}) {
-        this.crlId = "";
-        this.crltValue = new ArrayBuffer(0);
         Object.assign(this, params);
     }
 }
@@ -10192,15 +10853,17 @@ __decorate([
     AsnProp({ type: AsnPropTypes.ObjectIdentifier })
 ], CRLBag.prototype, "crlId", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Any, context: 0 })
+    AsnProp({
+        type: AsnPropTypes.Any, context: 0,
+    })
 ], CRLBag.prototype, "crltValue", void 0);
 
 class EncryptedData extends OctetString {
 }
 let EncryptedPrivateKeyInfo$1 = class EncryptedPrivateKeyInfo {
+    encryptionAlgorithm = new AlgorithmIdentifier();
+    encryptedData = new EncryptedData();
     constructor(params = {}) {
-        this.encryptionAlgorithm = new AlgorithmIdentifier();
-        this.encryptedData = new EncryptedData();
         Object.assign(this, params);
     }
 };
@@ -10225,13 +10888,16 @@ let Attributes$1 = Attributes_1$1 = class Attributes extends AsnArray {
     }
 };
 Attributes$1 = Attributes_1$1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Sequence, itemType: Attribute$2 })
+    AsnType({
+        type: AsnTypeTypes.Sequence, itemType: Attribute$2,
+    })
 ], Attributes$1);
 class PrivateKeyInfo {
+    version = Version.v1;
+    privateKeyAlgorithm = new AlgorithmIdentifier();
+    privateKey = new PrivateKey();
+    attributes;
     constructor(params = {}) {
-        this.version = Version.v1;
-        this.privateKeyAlgorithm = new AlgorithmIdentifier();
-        this.privateKey = new PrivateKey();
         Object.assign(this, params);
     }
 }
@@ -10245,7 +10911,9 @@ __decorate([
     AsnProp({ type: PrivateKey })
 ], PrivateKeyInfo.prototype, "privateKey", void 0);
 __decorate([
-    AsnProp({ type: Attributes$1, implicit: true, context: 0, optional: true })
+    AsnProp({
+        type: Attributes$1, implicit: true, context: 0, optional: true,
+    })
 ], PrivateKeyInfo.prototype, "attributes", void 0);
 
 let KeyBag = class KeyBag extends PrivateKeyInfo {
@@ -10261,9 +10929,9 @@ PKCS8ShroudedKeyBag = __decorate([
 ], PKCS8ShroudedKeyBag);
 
 class SecretBag {
+    secretTypeId = "";
+    secretValue = new ArrayBuffer(0);
     constructor(params = {}) {
-        this.secretTypeId = "";
-        this.secretValue = new ArrayBuffer(0);
         Object.assign(this, params);
     }
 }
@@ -10271,14 +10939,16 @@ __decorate([
     AsnProp({ type: AsnPropTypes.ObjectIdentifier })
 ], SecretBag.prototype, "secretTypeId", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Any, context: 0 })
+    AsnProp({
+        type: AsnPropTypes.Any, context: 0,
+    })
 ], SecretBag.prototype, "secretValue", void 0);
 
 class MacData {
+    mac = new DigestInfo();
+    macSalt = new OctetString();
+    iterations = 1;
     constructor(params = {}) {
-        this.mac = new DigestInfo();
-        this.macSalt = new OctetString();
-        this.iterations = 1;
         Object.assign(this, params);
     }
 }
@@ -10289,14 +10959,16 @@ __decorate([
     AsnProp({ type: OctetString })
 ], MacData.prototype, "macSalt", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Integer, defaultValue: 1 })
+    AsnProp({
+        type: AsnPropTypes.Integer, defaultValue: 1,
+    })
 ], MacData.prototype, "iterations", void 0);
 
 class PFX {
+    version = 3;
+    authSafe = new ContentInfo();
+    macData = new MacData();
     constructor(params = {}) {
-        this.version = 3;
-        this.authSafe = new ContentInfo();
-        this.macData = new MacData();
         Object.assign(this, params);
     }
 }
@@ -10307,14 +10979,17 @@ __decorate([
     AsnProp({ type: ContentInfo })
 ], PFX.prototype, "authSafe", void 0);
 __decorate([
-    AsnProp({ type: MacData, optional: true })
+    AsnProp({
+        type: MacData, optional: true,
+    })
 ], PFX.prototype, "macData", void 0);
 
 var SafeContents_1;
 class SafeBag {
+    bagId = "";
+    bagValue = new ArrayBuffer(0);
+    bagAttributes;
     constructor(params = {}) {
-        this.bagId = "";
-        this.bagValue = new ArrayBuffer(0);
         Object.assign(this, params);
     }
 }
@@ -10322,10 +10997,14 @@ __decorate([
     AsnProp({ type: AsnPropTypes.ObjectIdentifier })
 ], SafeBag.prototype, "bagId", void 0);
 __decorate([
-    AsnProp({ type: AsnPropTypes.Any, context: 0 })
+    AsnProp({
+        type: AsnPropTypes.Any, context: 0,
+    })
 ], SafeBag.prototype, "bagValue", void 0);
 __decorate([
-    AsnProp({ type: PKCS12Attribute, repeated: "set", optional: true })
+    AsnProp({
+        type: PKCS12Attribute, repeated: "set", optional: true,
+    })
 ], SafeBag.prototype, "bagAttributes", void 0);
 let SafeContents = SafeContents_1 = class SafeContents extends AsnArray {
     constructor(items) {
@@ -10334,7 +11013,9 @@ let SafeContents = SafeContents_1 = class SafeContents extends AsnArray {
     }
 };
 SafeContents = SafeContents_1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Sequence, itemType: SafeBag })
+    AsnType({
+        type: AsnTypeTypes.Sequence, itemType: SafeBag,
+    })
 ], SafeContents);
 
 var ExtensionRequest_1, ExtendedCertificateAttributes_1, SMIMECapabilities_1;
@@ -10342,6 +11023,7 @@ const id_pkcs9 = "1.2.840.113549.1.9";
 const id_pkcs9_at_challengePassword = `${id_pkcs9}.7`;
 const id_pkcs9_at_extensionRequest = `${id_pkcs9}.14`;
 let PKCS9String = class PKCS9String extends DirectoryString {
+    ia5String;
     constructor(params = {}) {
         super(params);
     }
@@ -10371,6 +11053,7 @@ EncryptedPrivateKeyInfo = __decorate([
     AsnType({ type: AsnTypeTypes.Sequence })
 ], EncryptedPrivateKeyInfo);
 let EmailAddress = class EmailAddress {
+    value;
     constructor(value = "") {
         this.value = value;
     }
@@ -10395,6 +11078,7 @@ UnstructuredAddress = __decorate([
     AsnType({ type: AsnTypeTypes.Choice })
 ], UnstructuredAddress);
 let DateOfBirth = class DateOfBirth {
+    value;
     constructor(value = new Date()) {
         this.value = value;
     }
@@ -10411,6 +11095,7 @@ PlaceOfBirth = __decorate([
     AsnType({ type: AsnTypeTypes.Choice })
 ], PlaceOfBirth);
 let Gender = class Gender {
+    value;
     constructor(value = "M") {
         this.value = value;
     }
@@ -10425,6 +11110,7 @@ Gender = __decorate([
     AsnType({ type: AsnTypeTypes.Choice })
 ], Gender);
 let CountryOfCitizenship = class CountryOfCitizenship {
+    value;
     constructor(value = "") {
         this.value = value;
     }
@@ -10449,6 +11135,7 @@ Pseudonym = __decorate([
     AsnType({ type: AsnTypeTypes.Choice })
 ], Pseudonym);
 let ContentType = class ContentType {
+    value;
     constructor(value = "") {
         this.value = value;
     }
@@ -10468,6 +11155,7 @@ SigningTime = __decorate([
     AsnType({ type: AsnTypeTypes.Choice })
 ], SigningTime);
 let SequenceNumber = class SequenceNumber {
+    value;
     constructor(value = 0) {
         this.value = value;
     }
@@ -10507,9 +11195,12 @@ let ExtendedCertificateAttributes = ExtendedCertificateAttributes_1 = class Exte
     }
 };
 ExtendedCertificateAttributes = ExtendedCertificateAttributes_1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Set, itemType: Attribute$1 })
+    AsnType({
+        type: AsnTypeTypes.Set, itemType: Attribute$1,
+    })
 ], ExtendedCertificateAttributes);
 let FriendlyName = class FriendlyName {
+    value;
     constructor(value = "") {
         this.value = value;
     }
@@ -10535,7 +11226,9 @@ let SMIMECapabilities = SMIMECapabilities_1 = class SMIMECapabilities extends As
     }
 };
 SMIMECapabilities = SMIMECapabilities_1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Sequence, itemType: SMIMECapability })
+    AsnType({
+        type: AsnTypeTypes.Sequence, itemType: SMIMECapability,
+    })
 ], SMIMECapabilities);
 
 var Attributes_1;
@@ -10546,15 +11239,17 @@ let Attributes = Attributes_1 = class Attributes extends AsnArray {
     }
 };
 Attributes = Attributes_1 = __decorate([
-    AsnType({ type: AsnTypeTypes.Sequence, itemType: Attribute$2 })
+    AsnType({
+        type: AsnTypeTypes.Sequence, itemType: Attribute$2,
+    })
 ], Attributes);
 
 class CertificationRequestInfo {
+    version = 0;
+    subject = new Name$1();
+    subjectPKInfo = new SubjectPublicKeyInfo();
+    attributes = new Attributes();
     constructor(params = {}) {
-        this.version = 0;
-        this.subject = new Name$1();
-        this.subjectPKInfo = new SubjectPublicKeyInfo();
-        this.attributes = new Attributes();
         Object.assign(this, params);
     }
 }
@@ -10568,19 +11263,24 @@ __decorate([
     AsnProp({ type: SubjectPublicKeyInfo })
 ], CertificationRequestInfo.prototype, "subjectPKInfo", void 0);
 __decorate([
-    AsnProp({ type: Attributes, implicit: true, context: 0, optional: true })
+    AsnProp({
+        type: Attributes, implicit: true, context: 0, optional: true,
+    })
 ], CertificationRequestInfo.prototype, "attributes", void 0);
 
 class CertificationRequest {
+    certificationRequestInfo = new CertificationRequestInfo();
+    certificationRequestInfoRaw;
+    signatureAlgorithm = new AlgorithmIdentifier();
+    signature = new ArrayBuffer(0);
     constructor(params = {}) {
-        this.certificationRequestInfo = new CertificationRequestInfo();
-        this.signatureAlgorithm = new AlgorithmIdentifier();
-        this.signature = new ArrayBuffer(0);
         Object.assign(this, params);
     }
 }
 __decorate([
-    AsnProp({ type: CertificationRequestInfo, raw: true })
+    AsnProp({
+        type: CertificationRequestInfo, raw: true,
+    })
 ], CertificationRequest.prototype, "certificationRequestInfo", void 0);
 __decorate([
     AsnProp({ type: AlgorithmIdentifier })
@@ -14625,7 +15325,7 @@ function requireCrypto () {
 
 var logger = {};
 
-var src = {exports: {}};
+var src$1 = {exports: {}};
 
 var browser = {exports: {}};
 
@@ -15662,17 +16362,17 @@ function requireNode () {
  * treat as a browser.
  */
 
-var hasRequiredSrc$1;
+var hasRequiredSrc$2;
 
-function requireSrc$1 () {
-	if (hasRequiredSrc$1) return src.exports;
-	hasRequiredSrc$1 = 1;
+function requireSrc$2 () {
+	if (hasRequiredSrc$2) return src$1.exports;
+	hasRequiredSrc$2 = 1;
 	if (typeof process === 'undefined' || process.type === 'renderer' || process.browser === true || process.__nwjs) {
-		src.exports = requireBrowser();
+		src$1.exports = requireBrowser();
 	} else {
-		src.exports = requireNode();
+		src$1.exports = requireNode();
 	}
-	return src.exports;
+	return src$1.exports;
 }
 
 /**
@@ -15684,7 +16384,7 @@ var hasRequiredLogger;
 function requireLogger () {
 	if (hasRequiredLogger) return logger;
 	hasRequiredLogger = 1;
-	const debug = requireSrc$1()('acme-client');
+	const debug = requireSrc$2()('acme-client');
 
 	let logger$1 = () => {};
 
@@ -28534,7 +29234,7 @@ function requireForm_data () {
 	var path = require$$1$1;
 	var http = require$$3$2;
 	var https = require$$4$1;
-	var parseUrl = url.parse;
+	var parseUrl = require$$2.parse;
 	var fs = require$$6;
 	var Stream = require$$0$4.Stream;
 	var crypto = require$$0$1;
@@ -29024,6 +29724,527 @@ function requireForm_data () {
 	return form_data;
 }
 
+var agent = {};
+
+var promisify = {};
+
+var hasRequiredPromisify;
+
+function requirePromisify () {
+	if (hasRequiredPromisify) return promisify;
+	hasRequiredPromisify = 1;
+	Object.defineProperty(promisify, "__esModule", { value: true });
+	function promisify$1(fn) {
+	    return function (req, opts) {
+	        return new Promise((resolve, reject) => {
+	            fn.call(this, req, opts, (err, rtn) => {
+	                if (err) {
+	                    reject(err);
+	                }
+	                else {
+	                    resolve(rtn);
+	                }
+	            });
+	        });
+	    };
+	}
+	promisify.default = promisify$1;
+	
+	return promisify;
+}
+
+var src;
+var hasRequiredSrc$1;
+
+function requireSrc$1 () {
+	if (hasRequiredSrc$1) return src;
+	hasRequiredSrc$1 = 1;
+	var __importDefault = (src && src.__importDefault) || function (mod) {
+	    return (mod && mod.__esModule) ? mod : { "default": mod };
+	};
+	const events_1 = require$$0$5;
+	const debug_1 = __importDefault(requireSrc$2());
+	const promisify_1 = __importDefault(requirePromisify());
+	const debug = debug_1.default('agent-base');
+	function isAgent(v) {
+	    return Boolean(v) && typeof v.addRequest === 'function';
+	}
+	function isSecureEndpoint() {
+	    const { stack } = new Error();
+	    if (typeof stack !== 'string')
+	        return false;
+	    return stack.split('\n').some(l => l.indexOf('(https.js:') !== -1 || l.indexOf('node:https:') !== -1);
+	}
+	function createAgent(callback, opts) {
+	    return new createAgent.Agent(callback, opts);
+	}
+	(function (createAgent) {
+	    /**
+	     * Base `http.Agent` implementation.
+	     * No pooling/keep-alive is implemented by default.
+	     *
+	     * @param {Function} callback
+	     * @api public
+	     */
+	    class Agent extends events_1.EventEmitter {
+	        constructor(callback, _opts) {
+	            super();
+	            let opts = _opts;
+	            if (typeof callback === 'function') {
+	                this.callback = callback;
+	            }
+	            else if (callback) {
+	                opts = callback;
+	            }
+	            // Timeout for the socket to be returned from the callback
+	            this.timeout = null;
+	            if (opts && typeof opts.timeout === 'number') {
+	                this.timeout = opts.timeout;
+	            }
+	            // These aren't actually used by `agent-base`, but are required
+	            // for the TypeScript definition files in `@types/node` :/
+	            this.maxFreeSockets = 1;
+	            this.maxSockets = 1;
+	            this.maxTotalSockets = Infinity;
+	            this.sockets = {};
+	            this.freeSockets = {};
+	            this.requests = {};
+	            this.options = {};
+	        }
+	        get defaultPort() {
+	            if (typeof this.explicitDefaultPort === 'number') {
+	                return this.explicitDefaultPort;
+	            }
+	            return isSecureEndpoint() ? 443 : 80;
+	        }
+	        set defaultPort(v) {
+	            this.explicitDefaultPort = v;
+	        }
+	        get protocol() {
+	            if (typeof this.explicitProtocol === 'string') {
+	                return this.explicitProtocol;
+	            }
+	            return isSecureEndpoint() ? 'https:' : 'http:';
+	        }
+	        set protocol(v) {
+	            this.explicitProtocol = v;
+	        }
+	        callback(req, opts, fn) {
+	            throw new Error('"agent-base" has no default implementation, you must subclass and override `callback()`');
+	        }
+	        /**
+	         * Called by node-core's "_http_client.js" module when creating
+	         * a new HTTP request with this Agent instance.
+	         *
+	         * @api public
+	         */
+	        addRequest(req, _opts) {
+	            const opts = Object.assign({}, _opts);
+	            if (typeof opts.secureEndpoint !== 'boolean') {
+	                opts.secureEndpoint = isSecureEndpoint();
+	            }
+	            if (opts.host == null) {
+	                opts.host = 'localhost';
+	            }
+	            if (opts.port == null) {
+	                opts.port = opts.secureEndpoint ? 443 : 80;
+	            }
+	            if (opts.protocol == null) {
+	                opts.protocol = opts.secureEndpoint ? 'https:' : 'http:';
+	            }
+	            if (opts.host && opts.path) {
+	                // If both a `host` and `path` are specified then it's most
+	                // likely the result of a `url.parse()` call... we need to
+	                // remove the `path` portion so that `net.connect()` doesn't
+	                // attempt to open that as a unix socket file.
+	                delete opts.path;
+	            }
+	            delete opts.agent;
+	            delete opts.hostname;
+	            delete opts._defaultAgent;
+	            delete opts.defaultPort;
+	            delete opts.createConnection;
+	            // Hint to use "Connection: close"
+	            // XXX: non-documented `http` module API :(
+	            req._last = true;
+	            req.shouldKeepAlive = false;
+	            let timedOut = false;
+	            let timeoutId = null;
+	            const timeoutMs = opts.timeout || this.timeout;
+	            const onerror = (err) => {
+	                if (req._hadError)
+	                    return;
+	                req.emit('error', err);
+	                // For Safety. Some additional errors might fire later on
+	                // and we need to make sure we don't double-fire the error event.
+	                req._hadError = true;
+	            };
+	            const ontimeout = () => {
+	                timeoutId = null;
+	                timedOut = true;
+	                const err = new Error(`A "socket" was not created for HTTP request before ${timeoutMs}ms`);
+	                err.code = 'ETIMEOUT';
+	                onerror(err);
+	            };
+	            const callbackError = (err) => {
+	                if (timedOut)
+	                    return;
+	                if (timeoutId !== null) {
+	                    clearTimeout(timeoutId);
+	                    timeoutId = null;
+	                }
+	                onerror(err);
+	            };
+	            const onsocket = (socket) => {
+	                if (timedOut)
+	                    return;
+	                if (timeoutId != null) {
+	                    clearTimeout(timeoutId);
+	                    timeoutId = null;
+	                }
+	                if (isAgent(socket)) {
+	                    // `socket` is actually an `http.Agent` instance, so
+	                    // relinquish responsibility for this `req` to the Agent
+	                    // from here on
+	                    debug('Callback returned another Agent instance %o', socket.constructor.name);
+	                    socket.addRequest(req, opts);
+	                    return;
+	                }
+	                if (socket) {
+	                    socket.once('free', () => {
+	                        this.freeSocket(socket, opts);
+	                    });
+	                    req.onSocket(socket);
+	                    return;
+	                }
+	                const err = new Error(`no Duplex stream was returned to agent-base for \`${req.method} ${req.path}\``);
+	                onerror(err);
+	            };
+	            if (typeof this.callback !== 'function') {
+	                onerror(new Error('`callback` is not defined'));
+	                return;
+	            }
+	            if (!this.promisifiedCallback) {
+	                if (this.callback.length >= 3) {
+	                    debug('Converting legacy callback function to promise');
+	                    this.promisifiedCallback = promisify_1.default(this.callback);
+	                }
+	                else {
+	                    this.promisifiedCallback = this.callback;
+	                }
+	            }
+	            if (typeof timeoutMs === 'number' && timeoutMs > 0) {
+	                timeoutId = setTimeout(ontimeout, timeoutMs);
+	            }
+	            if ('port' in opts && typeof opts.port !== 'number') {
+	                opts.port = Number(opts.port);
+	            }
+	            try {
+	                debug('Resolving socket for %o request: %o', opts.protocol, `${req.method} ${req.path}`);
+	                Promise.resolve(this.promisifiedCallback(req, opts)).then(onsocket, callbackError);
+	            }
+	            catch (err) {
+	                Promise.reject(err).catch(callbackError);
+	            }
+	        }
+	        freeSocket(socket, opts) {
+	            debug('Freeing socket %o %o', socket.constructor.name, opts);
+	            socket.destroy();
+	        }
+	        destroy() {
+	            debug('Destroying agent %o', this.constructor.name);
+	        }
+	    }
+	    createAgent.Agent = Agent;
+	    // So that `instanceof` works correctly
+	    createAgent.prototype = createAgent.Agent.prototype;
+	})(createAgent || (createAgent = {}));
+	src = createAgent;
+	
+	return src;
+}
+
+var parseProxyResponse = {};
+
+var hasRequiredParseProxyResponse;
+
+function requireParseProxyResponse () {
+	if (hasRequiredParseProxyResponse) return parseProxyResponse;
+	hasRequiredParseProxyResponse = 1;
+	var __importDefault = (parseProxyResponse && parseProxyResponse.__importDefault) || function (mod) {
+	    return (mod && mod.__esModule) ? mod : { "default": mod };
+	};
+	Object.defineProperty(parseProxyResponse, "__esModule", { value: true });
+	const debug_1 = __importDefault(requireSrc$2());
+	const debug = debug_1.default('https-proxy-agent:parse-proxy-response');
+	function parseProxyResponse$1(socket) {
+	    return new Promise((resolve, reject) => {
+	        // we need to buffer any HTTP traffic that happens with the proxy before we get
+	        // the CONNECT response, so that if the response is anything other than an "200"
+	        // response code, then we can re-play the "data" events on the socket once the
+	        // HTTP parser is hooked up...
+	        let buffersLength = 0;
+	        const buffers = [];
+	        function read() {
+	            const b = socket.read();
+	            if (b)
+	                ondata(b);
+	            else
+	                socket.once('readable', read);
+	        }
+	        function cleanup() {
+	            socket.removeListener('end', onend);
+	            socket.removeListener('error', onerror);
+	            socket.removeListener('close', onclose);
+	            socket.removeListener('readable', read);
+	        }
+	        function onclose(err) {
+	            debug('onclose had error %o', err);
+	        }
+	        function onend() {
+	            debug('onend');
+	        }
+	        function onerror(err) {
+	            cleanup();
+	            debug('onerror %o', err);
+	            reject(err);
+	        }
+	        function ondata(b) {
+	            buffers.push(b);
+	            buffersLength += b.length;
+	            const buffered = Buffer.concat(buffers, buffersLength);
+	            const endOfHeaders = buffered.indexOf('\r\n\r\n');
+	            if (endOfHeaders === -1) {
+	                // keep buffering
+	                debug('have not received end of HTTP headers yet...');
+	                read();
+	                return;
+	            }
+	            const firstLine = buffered.toString('ascii', 0, buffered.indexOf('\r\n'));
+	            const statusCode = +firstLine.split(' ')[1];
+	            debug('got proxy server response: %o', firstLine);
+	            resolve({
+	                statusCode,
+	                buffered
+	            });
+	        }
+	        socket.on('error', onerror);
+	        socket.on('close', onclose);
+	        socket.on('end', onend);
+	        read();
+	    });
+	}
+	parseProxyResponse.default = parseProxyResponse$1;
+	
+	return parseProxyResponse;
+}
+
+var hasRequiredAgent;
+
+function requireAgent () {
+	if (hasRequiredAgent) return agent;
+	hasRequiredAgent = 1;
+	var __awaiter = (agent && agent.__awaiter) || function (thisArg, _arguments, P, generator) {
+	    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+	    return new (P || (P = Promise))(function (resolve, reject) {
+	        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+	        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+	        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+	        step((generator = generator.apply(thisArg, _arguments || [])).next());
+	    });
+	};
+	var __importDefault = (agent && agent.__importDefault) || function (mod) {
+	    return (mod && mod.__esModule) ? mod : { "default": mod };
+	};
+	Object.defineProperty(agent, "__esModule", { value: true });
+	const net_1 = __importDefault(require$$0$2);
+	const tls_1 = __importDefault(require$$1$2);
+	const url_1 = __importDefault(require$$2);
+	const assert_1 = __importDefault(require$$3$3);
+	const debug_1 = __importDefault(requireSrc$2());
+	const agent_base_1 = requireSrc$1();
+	const parse_proxy_response_1 = __importDefault(requireParseProxyResponse());
+	const debug = debug_1.default('https-proxy-agent:agent');
+	/**
+	 * The `HttpsProxyAgent` implements an HTTP Agent subclass that connects to
+	 * the specified "HTTP(s) proxy server" in order to proxy HTTPS requests.
+	 *
+	 * Outgoing HTTP requests are first tunneled through the proxy server using the
+	 * `CONNECT` HTTP request method to establish a connection to the proxy server,
+	 * and then the proxy server connects to the destination target and issues the
+	 * HTTP request from the proxy server.
+	 *
+	 * `https:` requests have their socket connection upgraded to TLS once
+	 * the connection to the proxy server has been established.
+	 *
+	 * @api public
+	 */
+	class HttpsProxyAgent extends agent_base_1.Agent {
+	    constructor(_opts) {
+	        let opts;
+	        if (typeof _opts === 'string') {
+	            opts = url_1.default.parse(_opts);
+	        }
+	        else {
+	            opts = _opts;
+	        }
+	        if (!opts) {
+	            throw new Error('an HTTP(S) proxy server `host` and `port` must be specified!');
+	        }
+	        debug('creating new HttpsProxyAgent instance: %o', opts);
+	        super(opts);
+	        const proxy = Object.assign({}, opts);
+	        // If `true`, then connect to the proxy server over TLS.
+	        // Defaults to `false`.
+	        this.secureProxy = opts.secureProxy || isHTTPS(proxy.protocol);
+	        // Prefer `hostname` over `host`, and set the `port` if needed.
+	        proxy.host = proxy.hostname || proxy.host;
+	        if (typeof proxy.port === 'string') {
+	            proxy.port = parseInt(proxy.port, 10);
+	        }
+	        if (!proxy.port && proxy.host) {
+	            proxy.port = this.secureProxy ? 443 : 80;
+	        }
+	        // ALPN is supported by Node.js >= v5.
+	        // attempt to negotiate http/1.1 for proxy servers that support http/2
+	        if (this.secureProxy && !('ALPNProtocols' in proxy)) {
+	            proxy.ALPNProtocols = ['http 1.1'];
+	        }
+	        if (proxy.host && proxy.path) {
+	            // If both a `host` and `path` are specified then it's most likely
+	            // the result of a `url.parse()` call... we need to remove the
+	            // `path` portion so that `net.connect()` doesn't attempt to open
+	            // that as a Unix socket file.
+	            delete proxy.path;
+	            delete proxy.pathname;
+	        }
+	        this.proxy = proxy;
+	    }
+	    /**
+	     * Called when the node-core HTTP client library is creating a
+	     * new HTTP request.
+	     *
+	     * @api protected
+	     */
+	    callback(req, opts) {
+	        return __awaiter(this, void 0, void 0, function* () {
+	            const { proxy, secureProxy } = this;
+	            // Create a socket connection to the proxy server.
+	            let socket;
+	            if (secureProxy) {
+	                debug('Creating `tls.Socket`: %o', proxy);
+	                socket = tls_1.default.connect(proxy);
+	            }
+	            else {
+	                debug('Creating `net.Socket`: %o', proxy);
+	                socket = net_1.default.connect(proxy);
+	            }
+	            const headers = Object.assign({}, proxy.headers);
+	            const hostname = `${opts.host}:${opts.port}`;
+	            let payload = `CONNECT ${hostname} HTTP/1.1\r\n`;
+	            // Inject the `Proxy-Authorization` header if necessary.
+	            if (proxy.auth) {
+	                headers['Proxy-Authorization'] = `Basic ${Buffer.from(proxy.auth).toString('base64')}`;
+	            }
+	            // The `Host` header should only include the port
+	            // number when it is not the default port.
+	            let { host, port, secureEndpoint } = opts;
+	            if (!isDefaultPort(port, secureEndpoint)) {
+	                host += `:${port}`;
+	            }
+	            headers.Host = host;
+	            headers.Connection = 'close';
+	            for (const name of Object.keys(headers)) {
+	                payload += `${name}: ${headers[name]}\r\n`;
+	            }
+	            const proxyResponsePromise = parse_proxy_response_1.default(socket);
+	            socket.write(`${payload}\r\n`);
+	            const { statusCode, buffered } = yield proxyResponsePromise;
+	            if (statusCode === 200) {
+	                req.once('socket', resume);
+	                if (opts.secureEndpoint) {
+	                    // The proxy is connecting to a TLS server, so upgrade
+	                    // this socket connection to a TLS connection.
+	                    debug('Upgrading socket connection to TLS');
+	                    const servername = opts.servername || opts.host;
+	                    return tls_1.default.connect(Object.assign(Object.assign({}, omit(opts, 'host', 'hostname', 'path', 'port')), { socket,
+	                        servername }));
+	                }
+	                return socket;
+	            }
+	            // Some other status code that's not 200... need to re-play the HTTP
+	            // header "data" events onto the socket once the HTTP machinery is
+	            // attached so that the node core `http` can parse and handle the
+	            // error status code.
+	            // Close the original socket, and a new "fake" socket is returned
+	            // instead, so that the proxy doesn't get the HTTP request
+	            // written to it (which may contain `Authorization` headers or other
+	            // sensitive data).
+	            //
+	            // See: https://hackerone.com/reports/541502
+	            socket.destroy();
+	            const fakeSocket = new net_1.default.Socket({ writable: false });
+	            fakeSocket.readable = true;
+	            // Need to wait for the "socket" event to re-play the "data" events.
+	            req.once('socket', (s) => {
+	                debug('replaying proxy buffer for failed request');
+	                assert_1.default(s.listenerCount('data') > 0);
+	                // Replay the "buffered" Buffer onto the fake `socket`, since at
+	                // this point the HTTP module machinery has been hooked up for
+	                // the user.
+	                s.push(buffered);
+	                s.push(null);
+	            });
+	            return fakeSocket;
+	        });
+	    }
+	}
+	agent.default = HttpsProxyAgent;
+	function resume(socket) {
+	    socket.resume();
+	}
+	function isDefaultPort(port, secure) {
+	    return Boolean((!secure && port === 80) || (secure && port === 443));
+	}
+	function isHTTPS(protocol) {
+	    return typeof protocol === 'string' ? /^https:?$/i.test(protocol) : false;
+	}
+	function omit(obj, ...keys) {
+	    const ret = {};
+	    let key;
+	    for (key in obj) {
+	        if (!keys.includes(key)) {
+	            ret[key] = obj[key];
+	        }
+	    }
+	    return ret;
+	}
+	
+	return agent;
+}
+
+var dist;
+var hasRequiredDist;
+
+function requireDist () {
+	if (hasRequiredDist) return dist;
+	hasRequiredDist = 1;
+	var __importDefault = (dist && dist.__importDefault) || function (mod) {
+	    return (mod && mod.__esModule) ? mod : { "default": mod };
+	};
+	const agent_1 = __importDefault(requireAgent());
+	function createHttpsProxyAgent(opts) {
+	    return new agent_1.default(opts);
+	}
+	(function (createHttpsProxyAgent) {
+	    createHttpsProxyAgent.HttpsProxyAgent = agent_1.default;
+	    createHttpsProxyAgent.prototype = agent_1.default.prototype;
+	})(createHttpsProxyAgent || (createHttpsProxyAgent = {}));
+	dist = createHttpsProxyAgent;
+	
+	return dist;
+}
+
 var followRedirects = {exports: {}};
 
 var debug_1;
@@ -29038,7 +30259,7 @@ function requireDebug () {
 	  if (!debug) {
 	    try {
 	      /* eslint global-require: off */
-	      debug = requireSrc$1()("follow-redirects");
+	      debug = requireSrc$2()("follow-redirects");
 	    }
 	    catch (error) { /* */ }
 	    if (typeof debug !== "function") {
@@ -29055,12 +30276,12 @@ var hasRequiredFollowRedirects;
 function requireFollowRedirects () {
 	if (hasRequiredFollowRedirects) return followRedirects.exports;
 	hasRequiredFollowRedirects = 1;
-	var url$1 = url;
-	var URL = url$1.URL;
+	var url = require$$2;
+	var URL = url.URL;
 	var http = require$$3$2;
 	var https = require$$4$1;
 	var Writable = require$$0$4.Writable;
-	var assert = require$$4$2;
+	var assert = require$$3$3;
 	var debug = requireDebug();
 
 	// Preventive platform detection
@@ -29415,7 +30636,7 @@ function requireFollowRedirects () {
 	  // RFC7230§5.3.1: When making a request directly to an origin server, […]
 	  // a client MUST send only the absolute path […] as the request-target.
 	  this._currentUrl = /^\//.test(this._options.path) ?
-	    url$1.format(this._options) :
+	    url.format(this._options) :
 	    // When making a request to a proxy, […]
 	    // a client MUST send the target URI in absolute-form […].
 	    this._options.path;
@@ -29530,7 +30751,7 @@ function requireFollowRedirects () {
 	  var currentUrlParts = parseUrl(this._currentUrl);
 	  var currentHost = currentHostHeader || currentUrlParts.host;
 	  var currentUrl = /^\w+:/.test(location) ? this._currentUrl :
-	    url$1.format(Object.assign(currentUrlParts, { host: currentHost }));
+	    url.format(Object.assign(currentUrlParts, { host: currentHost }));
 
 	  // Create the redirected request
 	  var redirectUrl = resolveUrl(location, currentUrl);
@@ -29641,7 +30862,7 @@ function requireFollowRedirects () {
 	  }
 	  else {
 	    // Ensure the URL is valid and absolute
-	    parsed = validateUrl(url$1.parse(input));
+	    parsed = validateUrl(url.parse(input));
 	    if (!isString(parsed.protocol)) {
 	      throw new InvalidUrlError({ input });
 	    }
@@ -29651,7 +30872,7 @@ function requireFollowRedirects () {
 
 	function resolveUrl(relative, base) {
 	  // istanbul ignore next
-	  return useNativeURL ? new URL(relative, base) : parseUrl(url$1.resolve(base, relative));
+	  return useNativeURL ? new URL(relative, base) : parseUrl(url.resolve(base, relative));
 	}
 
 	function validateUrl(input) {
@@ -29767,7 +30988,7 @@ function requireFollowRedirects () {
 	return followRedirects.exports;
 }
 
-/*! Axios v1.15.0 Copyright (c) 2026 Matt Zabriskie and contributors */
+/*! Axios v1.17.0 Copyright (c) 2026 Matt Zabriskie and contributors */
 
 var axios_1$1;
 var hasRequiredAxios$1;
@@ -29778,15 +30999,17 @@ function requireAxios$1 () {
 
 	var FormData$1 = requireForm_data();
 	var crypto = require$$0$1;
-	var url$1 = url;
+	var url = require$$2;
+	var HttpsProxyAgent = requireDist();
 	var http = require$$3$2;
 	var https = require$$4$1;
-	var http2 = require$$5;
+	var http2 = require$$6$1;
 	var util = require$$1;
+	var path = require$$1$1;
 	var followRedirects = requireFollowRedirects();
-	var zlib = require$$8;
+	var zlib = require$$10;
 	var stream = require$$0$4;
-	var events = require$$10;
+	var events = require$$0$5;
 
 	/**
 	 * Create a bound version of a function with a specified `this` context
@@ -29982,9 +31205,9 @@ function requireAxios$1 () {
 	 * also have a `name` and `type` attribute to specify filename and content type
 	 *
 	 * @see https://github.com/facebook/react-native/blob/26684cf3adf4094eb6c405d345a75bf8c7c0bf88/Libraries/Network/FormData.js#L68-L71
-	 * 
+	 *
 	 * @param {*} value The value to test
-	 * 
+	 *
 	 * @returns {boolean} True if value is a React Native Blob, otherwise false
 	 */
 	const isReactNativeBlob = value => {
@@ -29994,9 +31217,9 @@ function requireAxios$1 () {
 	/**
 	 * Determine if environment is React Native
 	 * ReactNative `FormData` has a non-standard `getParts()` method
-	 * 
+	 *
 	 * @param {*} formData The formData to test
-	 * 
+	 *
 	 * @returns {boolean} True if environment is React Native, otherwise false
 	 */
 	const isReactNative = formData => formData && typeof formData.getParts !== 'undefined';
@@ -30015,7 +31238,7 @@ function requireAxios$1 () {
 	 *
 	 * @param {*} val The value to test
 	 *
-	 * @returns {boolean} True if value is a File, otherwise false
+	 * @returns {boolean} True if value is a FileList, otherwise false
 	 */
 	const isFileList = kindOfTest('FileList');
 
@@ -30045,10 +31268,16 @@ function requireAxios$1 () {
 	const G = getGlobal();
 	const FormDataCtor = typeof G.FormData !== 'undefined' ? G.FormData : undefined;
 	const isFormData = thing => {
-	  let kind;
-	  return thing && (FormDataCtor && thing instanceof FormDataCtor || isFunction$1(thing.append) && ((kind = kindOf(thing)) === 'formdata' ||
+	  if (!thing) return false;
+	  if (FormDataCtor && thing instanceof FormDataCtor) return true;
+	  // Reject plain objects inheriting directly from Object.prototype so prototype-pollution gadgets can't spoof FormData.
+	  const proto = getPrototypeOf(thing);
+	  if (!proto || proto === Object.prototype) return false;
+	  if (!isFunction$1(thing.append)) return false;
+	  const kind = kindOf(thing);
+	  return kind === 'formdata' ||
 	  // detect form-data instance
-	  kind === 'object' && isFunction$1(thing.toString) && thing.toString() === '[object FormData]'));
+	  kind === 'object' && isFunction$1(thing.toString) && thing.toString() === '[object FormData]';
 	};
 
 	/**
@@ -30173,8 +31402,7 @@ function requireAxios$1 () {
 	 *
 	 * @returns {Object} Result of all merge properties
 	 */
-	function merge(/* obj1, obj2, obj3, ... */
-	) {
+	function merge(...objs) {
 	  const {
 	    caseless,
 	    skipUndefined
@@ -30185,9 +31413,16 @@ function requireAxios$1 () {
 	    if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
 	      return;
 	    }
-	    const targetKey = caseless && findKey(result, key) || key;
-	    if (isPlainObject(result[targetKey]) && isPlainObject(val)) {
-	      result[targetKey] = merge(result[targetKey], val);
+
+	    // findKey lowercases the key, so caseless lookup only applies to strings —
+	    // symbol keys are identity-matched.
+	    const targetKey = caseless && typeof key === 'string' && findKey(result, key) || key;
+	    // Read via own-prop only — a bare `result[targetKey]` walks the prototype
+	    // chain, so a polluted Object.prototype value could surface here and get
+	    // copied into the merged result.
+	    const existing = hasOwnProperty(result, targetKey) ? result[targetKey] : undefined;
+	    if (isPlainObject(existing) && isPlainObject(val)) {
+	      result[targetKey] = merge(existing, val);
 	    } else if (isPlainObject(val)) {
 	      result[targetKey] = merge({}, val);
 	    } else if (isArray(val)) {
@@ -30196,8 +31431,22 @@ function requireAxios$1 () {
 	      result[targetKey] = val;
 	    }
 	  };
-	  for (let i = 0, l = arguments.length; i < l; i++) {
-	    arguments[i] && forEach(arguments[i], assignValue);
+	  for (let i = 0, l = objs.length; i < l; i++) {
+	    const source = objs[i];
+	    if (!source || isBuffer(source)) {
+	      continue;
+	    }
+	    forEach(source, assignValue);
+	    if (typeof source !== 'object' || isArray(source)) {
+	      continue;
+	    }
+	    const symbols = Object.getOwnPropertySymbols(source);
+	    for (let j = 0; j < symbols.length; j++) {
+	      const symbol = symbols[j];
+	      if (propertyIsEnumerable.call(source, symbol)) {
+	        assignValue(source[symbol], symbol);
+	      }
+	    }
 	  }
 	  return result;
 	}
@@ -30219,6 +31468,9 @@ function requireAxios$1 () {
 	  forEach(b, (val, key) => {
 	    if (thisArg && isFunction$1(val)) {
 	      Object.defineProperty(a, key, {
+	        // Null-proto descriptor so a polluted Object.prototype.get cannot
+	        // hijack defineProperty's accessor-vs-data resolution.
+	        __proto__: null,
 	        value: bind(val, thisArg),
 	        writable: true,
 	        enumerable: true,
@@ -30226,6 +31478,7 @@ function requireAxios$1 () {
 	      });
 	    } else {
 	      Object.defineProperty(a, key, {
+	        __proto__: null,
 	        value: val,
 	        writable: true,
 	        enumerable: true,
@@ -30264,12 +31517,14 @@ function requireAxios$1 () {
 	const inherits = (constructor, superConstructor, props, descriptors) => {
 	  constructor.prototype = Object.create(superConstructor.prototype, descriptors);
 	  Object.defineProperty(constructor.prototype, 'constructor', {
+	    __proto__: null,
 	    value: constructor,
 	    writable: true,
 	    enumerable: false,
 	    configurable: true
 	  });
 	  Object.defineProperty(constructor, 'super', {
+	    __proto__: null,
 	    value: superConstructor.prototype
 	  });
 	  props && Object.assign(constructor.prototype, props);
@@ -30408,6 +31663,9 @@ function requireAxios$1 () {
 	const hasOwnProperty = (({
 	  hasOwnProperty
 	}) => (obj, prop) => hasOwnProperty.call(obj, prop))(Object.prototype);
+	const {
+	  propertyIsEnumerable
+	} = Object.prototype;
 
 	/**
 	 * Determine if a value is a RegExp object
@@ -30437,7 +31695,7 @@ function requireAxios$1 () {
 	const freezeMethods = obj => {
 	  reduceDescriptors(obj, (descriptor, name) => {
 	    // skip restricted props in strict mode
-	    if (isFunction$1(obj) && ['arguments', 'caller', 'callee'].indexOf(name) !== -1) {
+	    if (isFunction$1(obj) && ['arguments', 'caller', 'callee'].includes(name)) {
 	      return false;
 	    }
 	    const value = obj[name];
@@ -30496,10 +31754,10 @@ function requireAxios$1 () {
 	 * @returns {Object} The JSON-compatible object.
 	 */
 	const toJSONObject = obj => {
-	  const stack = new Array(10);
-	  const visit = (source, i) => {
+	  const visited = new WeakSet();
+	  const visit = source => {
 	    if (isObject(source)) {
-	      if (stack.indexOf(source) >= 0) {
+	      if (visited.has(source)) {
 	        return;
 	      }
 
@@ -30508,19 +31766,20 @@ function requireAxios$1 () {
 	        return source;
 	      }
 	      if (!('toJSON' in source)) {
-	        stack[i] = source;
+	        // add-on descent / delete-on-ascent: preserves path semantics, so DAG nodes serialise at every occurrence (see #7230).
+	        visited.add(source);
 	        const target = isArray(source) ? [] : {};
 	        forEach(source, (value, key) => {
-	          const reducedValue = visit(value, i + 1);
+	          const reducedValue = visit(value);
 	          !isUndefined(reducedValue) && (target[key] = reducedValue);
 	        });
-	        stack[i] = undefined;
+	        visited.delete(source);
 	        return target;
 	      }
 	    }
 	    return source;
 	  };
-	  return visit(obj, 0);
+	  return visit(obj);
 	};
 
 	/**
@@ -30644,734 +31903,6 @@ function requireAxios$1 () {
 	  isIterable
 	};
 
-	class AxiosError extends Error {
-	  static from(error, code, config, request, response, customProps) {
-	    const axiosError = new AxiosError(error.message, code || error.code, config, request, response);
-	    axiosError.cause = error;
-	    axiosError.name = error.name;
-
-	    // Preserve status from the original error if not already set from response
-	    if (error.status != null && axiosError.status == null) {
-	      axiosError.status = error.status;
-	    }
-	    customProps && Object.assign(axiosError, customProps);
-	    return axiosError;
-	  }
-
-	  /**
-	   * Create an Error with the specified message, config, error code, request and response.
-	   *
-	   * @param {string} message The error message.
-	   * @param {string} [code] The error code (for example, 'ECONNABORTED').
-	   * @param {Object} [config] The config.
-	   * @param {Object} [request] The request.
-	   * @param {Object} [response] The response.
-	   *
-	   * @returns {Error} The created error.
-	   */
-	  constructor(message, code, config, request, response) {
-	    super(message);
-
-	    // Make message enumerable to maintain backward compatibility
-	    // The native Error constructor sets message as non-enumerable,
-	    // but axios < v1.13.3 had it as enumerable
-	    Object.defineProperty(this, 'message', {
-	      value: message,
-	      enumerable: true,
-	      writable: true,
-	      configurable: true
-	    });
-	    this.name = 'AxiosError';
-	    this.isAxiosError = true;
-	    code && (this.code = code);
-	    config && (this.config = config);
-	    request && (this.request = request);
-	    if (response) {
-	      this.response = response;
-	      this.status = response.status;
-	    }
-	  }
-	  toJSON() {
-	    return {
-	      // Standard
-	      message: this.message,
-	      name: this.name,
-	      // Microsoft
-	      description: this.description,
-	      number: this.number,
-	      // Mozilla
-	      fileName: this.fileName,
-	      lineNumber: this.lineNumber,
-	      columnNumber: this.columnNumber,
-	      stack: this.stack,
-	      // Axios
-	      config: utils$1.toJSONObject(this.config),
-	      code: this.code,
-	      status: this.status
-	    };
-	  }
-	}
-
-	// This can be changed to static properties as soon as the parser options in .eslint.cjs are updated.
-	AxiosError.ERR_BAD_OPTION_VALUE = 'ERR_BAD_OPTION_VALUE';
-	AxiosError.ERR_BAD_OPTION = 'ERR_BAD_OPTION';
-	AxiosError.ECONNABORTED = 'ECONNABORTED';
-	AxiosError.ETIMEDOUT = 'ETIMEDOUT';
-	AxiosError.ERR_NETWORK = 'ERR_NETWORK';
-	AxiosError.ERR_FR_TOO_MANY_REDIRECTS = 'ERR_FR_TOO_MANY_REDIRECTS';
-	AxiosError.ERR_DEPRECATED = 'ERR_DEPRECATED';
-	AxiosError.ERR_BAD_RESPONSE = 'ERR_BAD_RESPONSE';
-	AxiosError.ERR_BAD_REQUEST = 'ERR_BAD_REQUEST';
-	AxiosError.ERR_CANCELED = 'ERR_CANCELED';
-	AxiosError.ERR_NOT_SUPPORT = 'ERR_NOT_SUPPORT';
-	AxiosError.ERR_INVALID_URL = 'ERR_INVALID_URL';
-
-	/**
-	 * Determines if the given thing is a array or js object.
-	 *
-	 * @param {string} thing - The object or array to be visited.
-	 *
-	 * @returns {boolean}
-	 */
-	function isVisitable(thing) {
-	  return utils$1.isPlainObject(thing) || utils$1.isArray(thing);
-	}
-
-	/**
-	 * It removes the brackets from the end of a string
-	 *
-	 * @param {string} key - The key of the parameter.
-	 *
-	 * @returns {string} the key without the brackets.
-	 */
-	function removeBrackets(key) {
-	  return utils$1.endsWith(key, '[]') ? key.slice(0, -2) : key;
-	}
-
-	/**
-	 * It takes a path, a key, and a boolean, and returns a string
-	 *
-	 * @param {string} path - The path to the current key.
-	 * @param {string} key - The key of the current object being iterated over.
-	 * @param {string} dots - If true, the key will be rendered with dots instead of brackets.
-	 *
-	 * @returns {string} The path to the current key.
-	 */
-	function renderKey(path, key, dots) {
-	  if (!path) return key;
-	  return path.concat(key).map(function each(token, i) {
-	    // eslint-disable-next-line no-param-reassign
-	    token = removeBrackets(token);
-	    return !dots && i ? '[' + token + ']' : token;
-	  }).join(dots ? '.' : '');
-	}
-
-	/**
-	 * If the array is an array and none of its elements are visitable, then it's a flat array.
-	 *
-	 * @param {Array<any>} arr - The array to check
-	 *
-	 * @returns {boolean}
-	 */
-	function isFlatArray(arr) {
-	  return utils$1.isArray(arr) && !arr.some(isVisitable);
-	}
-	const predicates = utils$1.toFlatObject(utils$1, {}, null, function filter(prop) {
-	  return /^is[A-Z]/.test(prop);
-	});
-
-	/**
-	 * Convert a data object to FormData
-	 *
-	 * @param {Object} obj
-	 * @param {?Object} [formData]
-	 * @param {?Object} [options]
-	 * @param {Function} [options.visitor]
-	 * @param {Boolean} [options.metaTokens = true]
-	 * @param {Boolean} [options.dots = false]
-	 * @param {?Boolean} [options.indexes = false]
-	 *
-	 * @returns {Object}
-	 **/
-
-	/**
-	 * It converts an object into a FormData object
-	 *
-	 * @param {Object<any, any>} obj - The object to convert to form data.
-	 * @param {string} formData - The FormData object to append to.
-	 * @param {Object<string, any>} options
-	 *
-	 * @returns
-	 */
-	function toFormData(obj, formData, options) {
-	  if (!utils$1.isObject(obj)) {
-	    throw new TypeError('target must be an object');
-	  }
-
-	  // eslint-disable-next-line no-param-reassign
-	  formData = formData || new (FormData$1 || FormData)();
-
-	  // eslint-disable-next-line no-param-reassign
-	  options = utils$1.toFlatObject(options, {
-	    metaTokens: true,
-	    dots: false,
-	    indexes: false
-	  }, false, function defined(option, source) {
-	    // eslint-disable-next-line no-eq-null,eqeqeq
-	    return !utils$1.isUndefined(source[option]);
-	  });
-	  const metaTokens = options.metaTokens;
-	  // eslint-disable-next-line no-use-before-define
-	  const visitor = options.visitor || defaultVisitor;
-	  const dots = options.dots;
-	  const indexes = options.indexes;
-	  const _Blob = options.Blob || typeof Blob !== 'undefined' && Blob;
-	  const useBlob = _Blob && utils$1.isSpecCompliantForm(formData);
-	  if (!utils$1.isFunction(visitor)) {
-	    throw new TypeError('visitor must be a function');
-	  }
-	  function convertValue(value) {
-	    if (value === null) return '';
-	    if (utils$1.isDate(value)) {
-	      return value.toISOString();
-	    }
-	    if (utils$1.isBoolean(value)) {
-	      return value.toString();
-	    }
-	    if (!useBlob && utils$1.isBlob(value)) {
-	      throw new AxiosError('Blob is not supported. Use a Buffer instead.');
-	    }
-	    if (utils$1.isArrayBuffer(value) || utils$1.isTypedArray(value)) {
-	      return useBlob && typeof Blob === 'function' ? new Blob([value]) : Buffer.from(value);
-	    }
-	    return value;
-	  }
-
-	  /**
-	   * Default visitor.
-	   *
-	   * @param {*} value
-	   * @param {String|Number} key
-	   * @param {Array<String|Number>} path
-	   * @this {FormData}
-	   *
-	   * @returns {boolean} return true to visit the each prop of the value recursively
-	   */
-	  function defaultVisitor(value, key, path) {
-	    let arr = value;
-	    if (utils$1.isReactNative(formData) && utils$1.isReactNativeBlob(value)) {
-	      formData.append(renderKey(path, key, dots), convertValue(value));
-	      return false;
-	    }
-	    if (value && !path && typeof value === 'object') {
-	      if (utils$1.endsWith(key, '{}')) {
-	        // eslint-disable-next-line no-param-reassign
-	        key = metaTokens ? key : key.slice(0, -2);
-	        // eslint-disable-next-line no-param-reassign
-	        value = JSON.stringify(value);
-	      } else if (utils$1.isArray(value) && isFlatArray(value) || (utils$1.isFileList(value) || utils$1.endsWith(key, '[]')) && (arr = utils$1.toArray(value))) {
-	        // eslint-disable-next-line no-param-reassign
-	        key = removeBrackets(key);
-	        arr.forEach(function each(el, index) {
-	          !(utils$1.isUndefined(el) || el === null) && formData.append(
-	          // eslint-disable-next-line no-nested-ternary
-	          indexes === true ? renderKey([key], index, dots) : indexes === null ? key : key + '[]', convertValue(el));
-	        });
-	        return false;
-	      }
-	    }
-	    if (isVisitable(value)) {
-	      return true;
-	    }
-	    formData.append(renderKey(path, key, dots), convertValue(value));
-	    return false;
-	  }
-	  const stack = [];
-	  const exposedHelpers = Object.assign(predicates, {
-	    defaultVisitor,
-	    convertValue,
-	    isVisitable
-	  });
-	  function build(value, path) {
-	    if (utils$1.isUndefined(value)) return;
-	    if (stack.indexOf(value) !== -1) {
-	      throw Error('Circular reference detected in ' + path.join('.'));
-	    }
-	    stack.push(value);
-	    utils$1.forEach(value, function each(el, key) {
-	      const result = !(utils$1.isUndefined(el) || el === null) && visitor.call(formData, el, utils$1.isString(key) ? key.trim() : key, path, exposedHelpers);
-	      if (result === true) {
-	        build(el, path ? path.concat(key) : [key]);
-	      }
-	    });
-	    stack.pop();
-	  }
-	  if (!utils$1.isObject(obj)) {
-	    throw new TypeError('data must be an object');
-	  }
-	  build(obj);
-	  return formData;
-	}
-
-	/**
-	 * It encodes a string by replacing all characters that are not in the unreserved set with
-	 * their percent-encoded equivalents
-	 *
-	 * @param {string} str - The string to encode.
-	 *
-	 * @returns {string} The encoded string.
-	 */
-	function encode$1(str) {
-	  const charMap = {
-	    '!': '%21',
-	    "'": '%27',
-	    '(': '%28',
-	    ')': '%29',
-	    '~': '%7E',
-	    '%20': '+',
-	    '%00': '\x00'
-	  };
-	  return encodeURIComponent(str).replace(/[!'()~]|%20|%00/g, function replacer(match) {
-	    return charMap[match];
-	  });
-	}
-
-	/**
-	 * It takes a params object and converts it to a FormData object
-	 *
-	 * @param {Object<string, any>} params - The parameters to be converted to a FormData object.
-	 * @param {Object<string, any>} options - The options object passed to the Axios constructor.
-	 *
-	 * @returns {void}
-	 */
-	function AxiosURLSearchParams(params, options) {
-	  this._pairs = [];
-	  params && toFormData(params, this, options);
-	}
-	const prototype = AxiosURLSearchParams.prototype;
-	prototype.append = function append(name, value) {
-	  this._pairs.push([name, value]);
-	};
-	prototype.toString = function toString(encoder) {
-	  const _encode = encoder ? function (value) {
-	    return encoder.call(this, value, encode$1);
-	  } : encode$1;
-	  return this._pairs.map(function each(pair) {
-	    return _encode(pair[0]) + '=' + _encode(pair[1]);
-	  }, '').join('&');
-	};
-
-	/**
-	 * It replaces URL-encoded forms of `:`, `$`, `,`, and spaces with
-	 * their plain counterparts (`:`, `$`, `,`, `+`).
-	 *
-	 * @param {string} val The value to be encoded.
-	 *
-	 * @returns {string} The encoded value.
-	 */
-	function encode(val) {
-	  return encodeURIComponent(val).replace(/%3A/gi, ':').replace(/%24/g, '$').replace(/%2C/gi, ',').replace(/%20/g, '+');
-	}
-
-	/**
-	 * Build a URL by appending params to the end
-	 *
-	 * @param {string} url The base of the url (e.g., http://www.google.com)
-	 * @param {object} [params] The params to be appended
-	 * @param {?(object|Function)} options
-	 *
-	 * @returns {string} The formatted url
-	 */
-	function buildURL(url, params, options) {
-	  if (!params) {
-	    return url;
-	  }
-	  const _encode = options && options.encode || encode;
-	  const _options = utils$1.isFunction(options) ? {
-	    serialize: options
-	  } : options;
-	  const serializeFn = _options && _options.serialize;
-	  let serializedParams;
-	  if (serializeFn) {
-	    serializedParams = serializeFn(params, _options);
-	  } else {
-	    serializedParams = utils$1.isURLSearchParams(params) ? params.toString() : new AxiosURLSearchParams(params, _options).toString(_encode);
-	  }
-	  if (serializedParams) {
-	    const hashmarkIndex = url.indexOf('#');
-	    if (hashmarkIndex !== -1) {
-	      url = url.slice(0, hashmarkIndex);
-	    }
-	    url += (url.indexOf('?') === -1 ? '?' : '&') + serializedParams;
-	  }
-	  return url;
-	}
-
-	class InterceptorManager {
-	  constructor() {
-	    this.handlers = [];
-	  }
-
-	  /**
-	   * Add a new interceptor to the stack
-	   *
-	   * @param {Function} fulfilled The function to handle `then` for a `Promise`
-	   * @param {Function} rejected The function to handle `reject` for a `Promise`
-	   * @param {Object} options The options for the interceptor, synchronous and runWhen
-	   *
-	   * @return {Number} An ID used to remove interceptor later
-	   */
-	  use(fulfilled, rejected, options) {
-	    this.handlers.push({
-	      fulfilled,
-	      rejected,
-	      synchronous: options ? options.synchronous : false,
-	      runWhen: options ? options.runWhen : null
-	    });
-	    return this.handlers.length - 1;
-	  }
-
-	  /**
-	   * Remove an interceptor from the stack
-	   *
-	   * @param {Number} id The ID that was returned by `use`
-	   *
-	   * @returns {void}
-	   */
-	  eject(id) {
-	    if (this.handlers[id]) {
-	      this.handlers[id] = null;
-	    }
-	  }
-
-	  /**
-	   * Clear all interceptors from the stack
-	   *
-	   * @returns {void}
-	   */
-	  clear() {
-	    if (this.handlers) {
-	      this.handlers = [];
-	    }
-	  }
-
-	  /**
-	   * Iterate over all the registered interceptors
-	   *
-	   * This method is particularly useful for skipping over any
-	   * interceptors that may have become `null` calling `eject`.
-	   *
-	   * @param {Function} fn The function to call for each interceptor
-	   *
-	   * @returns {void}
-	   */
-	  forEach(fn) {
-	    utils$1.forEach(this.handlers, function forEachHandler(h) {
-	      if (h !== null) {
-	        fn(h);
-	      }
-	    });
-	  }
-	}
-
-	var transitionalDefaults = {
-	  silentJSONParsing: true,
-	  forcedJSONParsing: true,
-	  clarifyTimeoutError: false,
-	  legacyInterceptorReqResOrdering: true
-	};
-
-	var URLSearchParams = url$1.URLSearchParams;
-
-	const ALPHA = 'abcdefghijklmnopqrstuvwxyz';
-	const DIGIT = '0123456789';
-	const ALPHABET = {
-	  DIGIT,
-	  ALPHA,
-	  ALPHA_DIGIT: ALPHA + ALPHA.toUpperCase() + DIGIT
-	};
-	const generateString = (size = 16, alphabet = ALPHABET.ALPHA_DIGIT) => {
-	  let str = '';
-	  const {
-	    length
-	  } = alphabet;
-	  const randomValues = new Uint32Array(size);
-	  crypto.randomFillSync(randomValues);
-	  for (let i = 0; i < size; i++) {
-	    str += alphabet[randomValues[i] % length];
-	  }
-	  return str;
-	};
-	var platform$1 = {
-	  isNode: true,
-	  classes: {
-	    URLSearchParams,
-	    FormData: FormData$1,
-	    Blob: typeof Blob !== 'undefined' && Blob || null
-	  },
-	  ALPHABET,
-	  generateString,
-	  protocols: ['http', 'https', 'file', 'data']
-	};
-
-	const hasBrowserEnv = typeof window !== 'undefined' && typeof document !== 'undefined';
-	const _navigator = typeof navigator === 'object' && navigator || undefined;
-
-	/**
-	 * Determine if we're running in a standard browser environment
-	 *
-	 * This allows axios to run in a web worker, and react-native.
-	 * Both environments support XMLHttpRequest, but not fully standard globals.
-	 *
-	 * web workers:
-	 *  typeof window -> undefined
-	 *  typeof document -> undefined
-	 *
-	 * react-native:
-	 *  navigator.product -> 'ReactNative'
-	 * nativescript
-	 *  navigator.product -> 'NativeScript' or 'NS'
-	 *
-	 * @returns {boolean}
-	 */
-	const hasStandardBrowserEnv = hasBrowserEnv && (!_navigator || ['ReactNative', 'NativeScript', 'NS'].indexOf(_navigator.product) < 0);
-
-	/**
-	 * Determine if we're running in a standard browser webWorker environment
-	 *
-	 * Although the `isStandardBrowserEnv` method indicates that
-	 * `allows axios to run in a web worker`, the WebWorker will still be
-	 * filtered out due to its judgment standard
-	 * `typeof window !== 'undefined' && typeof document !== 'undefined'`.
-	 * This leads to a problem when axios post `FormData` in webWorker
-	 */
-	const hasStandardBrowserWebWorkerEnv = (() => {
-	  return typeof WorkerGlobalScope !== 'undefined' &&
-	  // eslint-disable-next-line no-undef
-	  self instanceof WorkerGlobalScope && typeof self.importScripts === 'function';
-	})();
-	const origin = hasBrowserEnv && window.location.href || 'http://localhost';
-
-	var utils = /*#__PURE__*/Object.freeze({
-	  __proto__: null,
-	  hasBrowserEnv: hasBrowserEnv,
-	  hasStandardBrowserEnv: hasStandardBrowserEnv,
-	  hasStandardBrowserWebWorkerEnv: hasStandardBrowserWebWorkerEnv,
-	  navigator: _navigator,
-	  origin: origin
-	});
-
-	var platform = {
-	  ...utils,
-	  ...platform$1
-	};
-
-	function toURLEncodedForm(data, options) {
-	  return toFormData(data, new platform.classes.URLSearchParams(), {
-	    visitor: function (value, key, path, helpers) {
-	      if (platform.isNode && utils$1.isBuffer(value)) {
-	        this.append(key, value.toString('base64'));
-	        return false;
-	      }
-	      return helpers.defaultVisitor.apply(this, arguments);
-	    },
-	    ...options
-	  });
-	}
-
-	/**
-	 * It takes a string like `foo[x][y][z]` and returns an array like `['foo', 'x', 'y', 'z']
-	 *
-	 * @param {string} name - The name of the property to get.
-	 *
-	 * @returns An array of strings.
-	 */
-	function parsePropPath(name) {
-	  // foo[x][y][z]
-	  // foo.x.y.z
-	  // foo-x-y-z
-	  // foo x y z
-	  return utils$1.matchAll(/\w+|\[(\w*)]/g, name).map(match => {
-	    return match[0] === '[]' ? '' : match[1] || match[0];
-	  });
-	}
-
-	/**
-	 * Convert an array to an object.
-	 *
-	 * @param {Array<any>} arr - The array to convert to an object.
-	 *
-	 * @returns An object with the same keys and values as the array.
-	 */
-	function arrayToObject(arr) {
-	  const obj = {};
-	  const keys = Object.keys(arr);
-	  let i;
-	  const len = keys.length;
-	  let key;
-	  for (i = 0; i < len; i++) {
-	    key = keys[i];
-	    obj[key] = arr[key];
-	  }
-	  return obj;
-	}
-
-	/**
-	 * It takes a FormData object and returns a JavaScript object
-	 *
-	 * @param {string} formData The FormData object to convert to JSON.
-	 *
-	 * @returns {Object<string, any> | null} The converted object.
-	 */
-	function formDataToJSON(formData) {
-	  function buildPath(path, value, target, index) {
-	    let name = path[index++];
-	    if (name === '__proto__') return true;
-	    const isNumericKey = Number.isFinite(+name);
-	    const isLast = index >= path.length;
-	    name = !name && utils$1.isArray(target) ? target.length : name;
-	    if (isLast) {
-	      if (utils$1.hasOwnProp(target, name)) {
-	        target[name] = [target[name], value];
-	      } else {
-	        target[name] = value;
-	      }
-	      return !isNumericKey;
-	    }
-	    if (!target[name] || !utils$1.isObject(target[name])) {
-	      target[name] = [];
-	    }
-	    const result = buildPath(path, value, target[name], index);
-	    if (result && utils$1.isArray(target[name])) {
-	      target[name] = arrayToObject(target[name]);
-	    }
-	    return !isNumericKey;
-	  }
-	  if (utils$1.isFormData(formData) && utils$1.isFunction(formData.entries)) {
-	    const obj = {};
-	    utils$1.forEachEntry(formData, (name, value) => {
-	      buildPath(parsePropPath(name), value, obj, 0);
-	    });
-	    return obj;
-	  }
-	  return null;
-	}
-
-	/**
-	 * It takes a string, tries to parse it, and if it fails, it returns the stringified version
-	 * of the input
-	 *
-	 * @param {any} rawValue - The value to be stringified.
-	 * @param {Function} parser - A function that parses a string into a JavaScript object.
-	 * @param {Function} encoder - A function that takes a value and returns a string.
-	 *
-	 * @returns {string} A stringified version of the rawValue.
-	 */
-	function stringifySafely(rawValue, parser, encoder) {
-	  if (utils$1.isString(rawValue)) {
-	    try {
-	      (parser || JSON.parse)(rawValue);
-	      return utils$1.trim(rawValue);
-	    } catch (e) {
-	      if (e.name !== 'SyntaxError') {
-	        throw e;
-	      }
-	    }
-	  }
-	  return (encoder || JSON.stringify)(rawValue);
-	}
-	const defaults = {
-	  transitional: transitionalDefaults,
-	  adapter: ['xhr', 'http', 'fetch'],
-	  transformRequest: [function transformRequest(data, headers) {
-	    const contentType = headers.getContentType() || '';
-	    const hasJSONContentType = contentType.indexOf('application/json') > -1;
-	    const isObjectPayload = utils$1.isObject(data);
-	    if (isObjectPayload && utils$1.isHTMLForm(data)) {
-	      data = new FormData(data);
-	    }
-	    const isFormData = utils$1.isFormData(data);
-	    if (isFormData) {
-	      return hasJSONContentType ? JSON.stringify(formDataToJSON(data)) : data;
-	    }
-	    if (utils$1.isArrayBuffer(data) || utils$1.isBuffer(data) || utils$1.isStream(data) || utils$1.isFile(data) || utils$1.isBlob(data) || utils$1.isReadableStream(data)) {
-	      return data;
-	    }
-	    if (utils$1.isArrayBufferView(data)) {
-	      return data.buffer;
-	    }
-	    if (utils$1.isURLSearchParams(data)) {
-	      headers.setContentType('application/x-www-form-urlencoded;charset=utf-8', false);
-	      return data.toString();
-	    }
-	    let isFileList;
-	    if (isObjectPayload) {
-	      if (contentType.indexOf('application/x-www-form-urlencoded') > -1) {
-	        return toURLEncodedForm(data, this.formSerializer).toString();
-	      }
-	      if ((isFileList = utils$1.isFileList(data)) || contentType.indexOf('multipart/form-data') > -1) {
-	        const _FormData = this.env && this.env.FormData;
-	        return toFormData(isFileList ? {
-	          'files[]': data
-	        } : data, _FormData && new _FormData(), this.formSerializer);
-	      }
-	    }
-	    if (isObjectPayload || hasJSONContentType) {
-	      headers.setContentType('application/json', false);
-	      return stringifySafely(data);
-	    }
-	    return data;
-	  }],
-	  transformResponse: [function transformResponse(data) {
-	    const transitional = this.transitional || defaults.transitional;
-	    const forcedJSONParsing = transitional && transitional.forcedJSONParsing;
-	    const JSONRequested = this.responseType === 'json';
-	    if (utils$1.isResponse(data) || utils$1.isReadableStream(data)) {
-	      return data;
-	    }
-	    if (data && utils$1.isString(data) && (forcedJSONParsing && !this.responseType || JSONRequested)) {
-	      const silentJSONParsing = transitional && transitional.silentJSONParsing;
-	      const strictJSONParsing = !silentJSONParsing && JSONRequested;
-	      try {
-	        return JSON.parse(data, this.parseReviver);
-	      } catch (e) {
-	        if (strictJSONParsing) {
-	          if (e.name === 'SyntaxError') {
-	            throw AxiosError.from(e, AxiosError.ERR_BAD_RESPONSE, this, null, this.response);
-	          }
-	          throw e;
-	        }
-	      }
-	    }
-	    return data;
-	  }],
-	  /**
-	   * A timeout in milliseconds to abort a request. If set to 0 (default) a
-	   * timeout is not created.
-	   */
-	  timeout: 0,
-	  xsrfCookieName: 'XSRF-TOKEN',
-	  xsrfHeaderName: 'X-XSRF-TOKEN',
-	  maxContentLength: -1,
-	  maxBodyLength: -1,
-	  env: {
-	    FormData: platform.classes.FormData,
-	    Blob: platform.classes.Blob
-	  },
-	  validateStatus: function validateStatus(status) {
-	    return status >= 200 && status < 300;
-	  },
-	  headers: {
-	    common: {
-	      Accept: 'application/json, text/plain, */*',
-	      'Content-Type': undefined
-	    }
-	  }
-	};
-	utils$1.forEach(['delete', 'get', 'head', 'post', 'put', 'patch'], method => {
-	  defaults.headers[method] = {};
-	});
-
 	// RawAxiosHeaders whose duplicates are ignored by node
 	// c.f. https://nodejs.org/api/http.html#http_message_headers
 	const ignoreDuplicateOf = utils$1.toObjectSet(['age', 'authorization', 'content-length', 'content-type', 'etag', 'expires', 'from', 'host', 'if-modified-since', 'if-unmodified-since', 'last-modified', 'location', 'max-forwards', 'proxy-authorization', 'referer', 'retry-after', 'user-agent']);
@@ -31415,39 +31946,56 @@ function requireAxios$1 () {
 	  return parsed;
 	};
 
-	const $internals = Symbol('internals');
-	const isValidHeaderValue = value => !/[\r\n]/.test(value);
-	function assertValidHeaderValue(value, header) {
-	  if (value === false || value == null) {
-	    return;
-	  }
-	  if (utils$1.isArray(value)) {
-	    value.forEach(v => assertValidHeaderValue(v, header));
-	    return;
-	  }
-	  if (!isValidHeaderValue(String(value))) {
-	    throw new Error(`Invalid character in header content ["${header}"]`);
-	  }
-	}
-	function normalizeHeader(header) {
-	  return header && String(header).trim().toLowerCase();
-	}
-	function stripTrailingCRLF(str) {
+	function trimSPorHTAB(str) {
+	  let start = 0;
 	  let end = str.length;
-	  while (end > 0) {
-	    const charCode = str.charCodeAt(end - 1);
-	    if (charCode !== 10 && charCode !== 13) {
+	  while (start < end) {
+	    const code = str.charCodeAt(start);
+	    if (code !== 0x09 && code !== 0x20) {
+	      break;
+	    }
+	    start += 1;
+	  }
+	  while (end > start) {
+	    const code = str.charCodeAt(end - 1);
+	    if (code !== 0x09 && code !== 0x20) {
 	      break;
 	    }
 	    end -= 1;
 	  }
-	  return end === str.length ? str : str.slice(0, end);
+	  return start === 0 && end === str.length ? str : str.slice(start, end);
+	}
+
+	// The control-code ranges are intentional: header sanitization strips C0/DEL bytes.
+	// eslint-disable-next-line no-control-regex
+	const INVALID_UNICODE_HEADER_VALUE_CHARS = new RegExp('[\\u0000-\\u0008\\u000a-\\u001f\\u007f]+', 'g');
+	// eslint-disable-next-line no-control-regex
+	const INVALID_BYTE_STRING_HEADER_VALUE_CHARS = new RegExp('[^\\u0009\\u0020-\\u007e\\u0080-\\u00ff]+', 'g');
+	function sanitizeValue(value, invalidChars) {
+	  if (utils$1.isArray(value)) {
+	    return value.map(item => sanitizeValue(item, invalidChars));
+	  }
+	  return trimSPorHTAB(String(value).replace(invalidChars, ''));
+	}
+	const sanitizeHeaderValue = value => sanitizeValue(value, INVALID_UNICODE_HEADER_VALUE_CHARS);
+	const sanitizeByteStringHeaderValue = value => sanitizeValue(value, INVALID_BYTE_STRING_HEADER_VALUE_CHARS);
+	function toByteStringHeaderObject(headers) {
+	  const byteStringHeaders = Object.create(null);
+	  utils$1.forEach(headers.toJSON(), (value, header) => {
+	    byteStringHeaders[header] = sanitizeByteStringHeaderValue(value);
+	  });
+	  return byteStringHeaders;
+	}
+
+	const $internals = Symbol('internals');
+	function normalizeHeader(header) {
+	  return header && String(header).trim().toLowerCase();
 	}
 	function normalizeValue(value) {
 	  if (value === false || value == null) {
 	    return value;
 	  }
-	  return utils$1.isArray(value) ? value.map(normalizeValue) : stripTrailingCRLF(String(value));
+	  return utils$1.isArray(value) ? value.map(normalizeValue) : sanitizeHeaderValue(String(value));
 	}
 	function parseTokens(str) {
 	  const tokens = Object.create(null);
@@ -31483,6 +32031,9 @@ function requireAxios$1 () {
 	  const accessorName = utils$1.toCamelCase(' ' + header);
 	  ['get', 'set', 'has'].forEach(methodName => {
 	    Object.defineProperty(obj, methodName + accessorName, {
+	      // Null-proto descriptor so a polluted Object.prototype.get cannot turn
+	      // this data descriptor into an accessor descriptor on the way in.
+	      __proto__: null,
 	      value: function (arg1, arg2, arg3) {
 	        return this[methodName].call(this, header, arg1, arg2, arg3);
 	      },
@@ -31499,11 +32050,10 @@ function requireAxios$1 () {
 	    function setHeader(_value, _header, _rewrite) {
 	      const lHeader = normalizeHeader(_header);
 	      if (!lHeader) {
-	        throw new Error('header name must be a non-empty string');
+	        return;
 	      }
 	      const key = utils$1.findKey(self, lHeader);
 	      if (!key || self[key] === undefined || _rewrite === true || _rewrite === undefined && self[key] !== false) {
-	        assertValidHeaderValue(_value, _header);
 	        self[key || _header] = normalizeValue(_value);
 	      }
 	    }
@@ -31518,7 +32068,7 @@ function requireAxios$1 () {
 	        key;
 	      for (const entry of header) {
 	        if (!utils$1.isArray(entry)) {
-	          throw TypeError('Object iterator must return a key-value pair');
+	          throw new TypeError('Object iterator must return a key-value pair');
 	        }
 	        obj[key = entry[0]] = (dest = obj[key]) ? utils$1.isArray(dest) ? [...dest, entry[1]] : [dest, entry[1]] : entry[1];
 	      }
@@ -31673,6 +32223,811 @@ function requireAxios$1 () {
 	});
 	utils$1.freezeMethods(AxiosHeaders);
 
+	const REDACTED = '[REDACTED ****]';
+	function hasOwnOrPrototypeToJSON(source) {
+	  if (utils$1.hasOwnProp(source, 'toJSON')) {
+	    return true;
+	  }
+	  let prototype = Object.getPrototypeOf(source);
+	  while (prototype && prototype !== Object.prototype) {
+	    if (utils$1.hasOwnProp(prototype, 'toJSON')) {
+	      return true;
+	    }
+	    prototype = Object.getPrototypeOf(prototype);
+	  }
+	  return false;
+	}
+
+	// Build a plain-object snapshot of `config` and replace the value of any key
+	// (case-insensitive) listed in `redactKeys` with REDACTED. Walks through arrays
+	// and AxiosHeaders, and short-circuits on circular references.
+	function redactConfig(config, redactKeys) {
+	  const lowerKeys = new Set(redactKeys.map(k => String(k).toLowerCase()));
+	  const seen = [];
+	  const visit = source => {
+	    if (source === null || typeof source !== 'object') return source;
+	    if (utils$1.isBuffer(source)) return source;
+	    if (seen.indexOf(source) !== -1) return undefined;
+	    if (source instanceof AxiosHeaders) {
+	      source = source.toJSON();
+	    }
+	    seen.push(source);
+	    let result;
+	    if (utils$1.isArray(source)) {
+	      result = [];
+	      source.forEach((v, i) => {
+	        const reducedValue = visit(v);
+	        if (!utils$1.isUndefined(reducedValue)) {
+	          result[i] = reducedValue;
+	        }
+	      });
+	    } else {
+	      if (!utils$1.isPlainObject(source) && hasOwnOrPrototypeToJSON(source)) {
+	        seen.pop();
+	        return source;
+	      }
+	      result = Object.create(null);
+	      for (const [key, value] of Object.entries(source)) {
+	        const reducedValue = lowerKeys.has(key.toLowerCase()) ? REDACTED : visit(value);
+	        if (!utils$1.isUndefined(reducedValue)) {
+	          result[key] = reducedValue;
+	        }
+	      }
+	    }
+	    seen.pop();
+	    return result;
+	  };
+	  return visit(config);
+	}
+	class AxiosError extends Error {
+	  static from(error, code, config, request, response, customProps) {
+	    const axiosError = new AxiosError(error.message, code || error.code, config, request, response);
+	    axiosError.cause = error;
+	    axiosError.name = error.name;
+
+	    // Preserve status from the original error if not already set from response
+	    if (error.status != null && axiosError.status == null) {
+	      axiosError.status = error.status;
+	    }
+	    customProps && Object.assign(axiosError, customProps);
+	    return axiosError;
+	  }
+
+	  /**
+	   * Create an Error with the specified message, config, error code, request and response.
+	   *
+	   * @param {string} message The error message.
+	   * @param {string} [code] The error code (for example, 'ECONNABORTED').
+	   * @param {Object} [config] The config.
+	   * @param {Object} [request] The request.
+	   * @param {Object} [response] The response.
+	   *
+	   * @returns {Error} The created error.
+	   */
+	  constructor(message, code, config, request, response) {
+	    super(message);
+
+	    // Make message enumerable to maintain backward compatibility
+	    // The native Error constructor sets message as non-enumerable,
+	    // but axios < v1.13.3 had it as enumerable
+	    Object.defineProperty(this, 'message', {
+	      // Null-proto descriptor so a polluted Object.prototype.get cannot turn
+	      // this data descriptor into an accessor descriptor on the way in.
+	      __proto__: null,
+	      value: message,
+	      enumerable: true,
+	      writable: true,
+	      configurable: true
+	    });
+	    this.name = 'AxiosError';
+	    this.isAxiosError = true;
+	    code && (this.code = code);
+	    config && (this.config = config);
+	    request && (this.request = request);
+	    if (response) {
+	      this.response = response;
+	      this.status = response.status;
+	    }
+	  }
+	  toJSON() {
+	    // Opt-in redaction: when the request config carries a `redact` array, the
+	    // value of any matching key (case-insensitive, at any depth) is replaced
+	    // with REDACTED in the serialized snapshot. Undefined or empty leaves the
+	    // existing serialization behavior unchanged.
+	    const config = this.config;
+	    const redactKeys = config && utils$1.hasOwnProp(config, 'redact') ? config.redact : undefined;
+	    const serializedConfig = utils$1.isArray(redactKeys) && redactKeys.length > 0 ? redactConfig(config, redactKeys) : utils$1.toJSONObject(config);
+	    return {
+	      // Standard
+	      message: this.message,
+	      name: this.name,
+	      // Microsoft
+	      description: this.description,
+	      number: this.number,
+	      // Mozilla
+	      fileName: this.fileName,
+	      lineNumber: this.lineNumber,
+	      columnNumber: this.columnNumber,
+	      stack: this.stack,
+	      // Axios
+	      config: serializedConfig,
+	      code: this.code,
+	      status: this.status
+	    };
+	  }
+	}
+
+	// This can be changed to static properties as soon as the parser options in .eslint.cjs are updated.
+	AxiosError.ERR_BAD_OPTION_VALUE = 'ERR_BAD_OPTION_VALUE';
+	AxiosError.ERR_BAD_OPTION = 'ERR_BAD_OPTION';
+	AxiosError.ECONNABORTED = 'ECONNABORTED';
+	AxiosError.ETIMEDOUT = 'ETIMEDOUT';
+	AxiosError.ECONNREFUSED = 'ECONNREFUSED';
+	AxiosError.ERR_NETWORK = 'ERR_NETWORK';
+	AxiosError.ERR_FR_TOO_MANY_REDIRECTS = 'ERR_FR_TOO_MANY_REDIRECTS';
+	AxiosError.ERR_DEPRECATED = 'ERR_DEPRECATED';
+	AxiosError.ERR_BAD_RESPONSE = 'ERR_BAD_RESPONSE';
+	AxiosError.ERR_BAD_REQUEST = 'ERR_BAD_REQUEST';
+	AxiosError.ERR_CANCELED = 'ERR_CANCELED';
+	AxiosError.ERR_NOT_SUPPORT = 'ERR_NOT_SUPPORT';
+	AxiosError.ERR_INVALID_URL = 'ERR_INVALID_URL';
+	AxiosError.ERR_FORM_DATA_DEPTH_EXCEEDED = 'ERR_FORM_DATA_DEPTH_EXCEEDED';
+
+	/**
+	 * Determines if the given thing is a array or js object.
+	 *
+	 * @param {string} thing - The object or array to be visited.
+	 *
+	 * @returns {boolean}
+	 */
+	function isVisitable(thing) {
+	  return utils$1.isPlainObject(thing) || utils$1.isArray(thing);
+	}
+
+	/**
+	 * It removes the brackets from the end of a string
+	 *
+	 * @param {string} key - The key of the parameter.
+	 *
+	 * @returns {string} the key without the brackets.
+	 */
+	function removeBrackets(key) {
+	  return utils$1.endsWith(key, '[]') ? key.slice(0, -2) : key;
+	}
+
+	/**
+	 * It takes a path, a key, and a boolean, and returns a string
+	 *
+	 * @param {string} path - The path to the current key.
+	 * @param {string} key - The key of the current object being iterated over.
+	 * @param {string} dots - If true, the key will be rendered with dots instead of brackets.
+	 *
+	 * @returns {string} The path to the current key.
+	 */
+	function renderKey(path, key, dots) {
+	  if (!path) return key;
+	  return path.concat(key).map(function each(token, i) {
+	    // eslint-disable-next-line no-param-reassign
+	    token = removeBrackets(token);
+	    return !dots && i ? '[' + token + ']' : token;
+	  }).join(dots ? '.' : '');
+	}
+
+	/**
+	 * If the array is an array and none of its elements are visitable, then it's a flat array.
+	 *
+	 * @param {Array<any>} arr - The array to check
+	 *
+	 * @returns {boolean}
+	 */
+	function isFlatArray(arr) {
+	  return utils$1.isArray(arr) && !arr.some(isVisitable);
+	}
+	const predicates = utils$1.toFlatObject(utils$1, {}, null, function filter(prop) {
+	  return /^is[A-Z]/.test(prop);
+	});
+
+	/**
+	 * Convert a data object to FormData
+	 *
+	 * @param {Object} obj
+	 * @param {?Object} [formData]
+	 * @param {?Object} [options]
+	 * @param {Function} [options.visitor]
+	 * @param {Boolean} [options.metaTokens = true]
+	 * @param {Boolean} [options.dots = false]
+	 * @param {?Boolean} [options.indexes = false]
+	 *
+	 * @returns {Object}
+	 **/
+
+	/**
+	 * It converts an object into a FormData object
+	 *
+	 * @param {Object<any, any>} obj - The object to convert to form data.
+	 * @param {string} formData - The FormData object to append to.
+	 * @param {Object<string, any>} options
+	 *
+	 * @returns
+	 */
+	function toFormData(obj, formData, options) {
+	  if (!utils$1.isObject(obj)) {
+	    throw new TypeError('target must be an object');
+	  }
+
+	  // eslint-disable-next-line no-param-reassign
+	  formData = formData || new (FormData$1 || FormData)();
+
+	  // eslint-disable-next-line no-param-reassign
+	  options = utils$1.toFlatObject(options, {
+	    metaTokens: true,
+	    dots: false,
+	    indexes: false
+	  }, false, function defined(option, source) {
+	    // eslint-disable-next-line no-eq-null,eqeqeq
+	    return !utils$1.isUndefined(source[option]);
+	  });
+	  const metaTokens = options.metaTokens;
+	  // eslint-disable-next-line no-use-before-define
+	  const visitor = options.visitor || defaultVisitor;
+	  const dots = options.dots;
+	  const indexes = options.indexes;
+	  const _Blob = options.Blob || typeof Blob !== 'undefined' && Blob;
+	  const maxDepth = options.maxDepth === undefined ? 100 : options.maxDepth;
+	  const useBlob = _Blob && utils$1.isSpecCompliantForm(formData);
+	  if (!utils$1.isFunction(visitor)) {
+	    throw new TypeError('visitor must be a function');
+	  }
+	  function convertValue(value) {
+	    if (value === null) return '';
+	    if (utils$1.isDate(value)) {
+	      return value.toISOString();
+	    }
+	    if (utils$1.isBoolean(value)) {
+	      return value.toString();
+	    }
+	    if (!useBlob && utils$1.isBlob(value)) {
+	      throw new AxiosError('Blob is not supported. Use a Buffer instead.');
+	    }
+	    if (utils$1.isArrayBuffer(value) || utils$1.isTypedArray(value)) {
+	      return useBlob && typeof Blob === 'function' ? new Blob([value]) : Buffer.from(value);
+	    }
+	    return value;
+	  }
+
+	  /**
+	   * Default visitor.
+	   *
+	   * @param {*} value
+	   * @param {String|Number} key
+	   * @param {Array<String|Number>} path
+	   * @this {FormData}
+	   *
+	   * @returns {boolean} return true to visit the each prop of the value recursively
+	   */
+	  function defaultVisitor(value, key, path) {
+	    let arr = value;
+	    if (utils$1.isReactNative(formData) && utils$1.isReactNativeBlob(value)) {
+	      formData.append(renderKey(path, key, dots), convertValue(value));
+	      return false;
+	    }
+	    if (value && !path && typeof value === 'object') {
+	      if (utils$1.endsWith(key, '{}')) {
+	        // eslint-disable-next-line no-param-reassign
+	        key = metaTokens ? key : key.slice(0, -2);
+	        // eslint-disable-next-line no-param-reassign
+	        value = JSON.stringify(value);
+	      } else if (utils$1.isArray(value) && isFlatArray(value) || (utils$1.isFileList(value) || utils$1.endsWith(key, '[]')) && (arr = utils$1.toArray(value))) {
+	        // eslint-disable-next-line no-param-reassign
+	        key = removeBrackets(key);
+	        arr.forEach(function each(el, index) {
+	          !(utils$1.isUndefined(el) || el === null) && formData.append(
+	          // eslint-disable-next-line no-nested-ternary
+	          indexes === true ? renderKey([key], index, dots) : indexes === null ? key : key + '[]', convertValue(el));
+	        });
+	        return false;
+	      }
+	    }
+	    if (isVisitable(value)) {
+	      return true;
+	    }
+	    formData.append(renderKey(path, key, dots), convertValue(value));
+	    return false;
+	  }
+	  const stack = [];
+	  const exposedHelpers = Object.assign(predicates, {
+	    defaultVisitor,
+	    convertValue,
+	    isVisitable
+	  });
+	  function build(value, path, depth = 0) {
+	    if (utils$1.isUndefined(value)) return;
+	    if (depth > maxDepth) {
+	      throw new AxiosError('Object is too deeply nested (' + depth + ' levels). Max depth: ' + maxDepth, AxiosError.ERR_FORM_DATA_DEPTH_EXCEEDED);
+	    }
+	    if (stack.indexOf(value) !== -1) {
+	      throw new Error('Circular reference detected in ' + path.join('.'));
+	    }
+	    stack.push(value);
+	    utils$1.forEach(value, function each(el, key) {
+	      const result = !(utils$1.isUndefined(el) || el === null) && visitor.call(formData, el, utils$1.isString(key) ? key.trim() : key, path, exposedHelpers);
+	      if (result === true) {
+	        build(el, path ? path.concat(key) : [key], depth + 1);
+	      }
+	    });
+	    stack.pop();
+	  }
+	  if (!utils$1.isObject(obj)) {
+	    throw new TypeError('data must be an object');
+	  }
+	  build(obj);
+	  return formData;
+	}
+
+	/**
+	 * It encodes a string by replacing all characters that are not in the unreserved set with
+	 * their percent-encoded equivalents
+	 *
+	 * @param {string} str - The string to encode.
+	 *
+	 * @returns {string} The encoded string.
+	 */
+	function encode$1(str) {
+	  const charMap = {
+	    '!': '%21',
+	    "'": '%27',
+	    '(': '%28',
+	    ')': '%29',
+	    '~': '%7E',
+	    '%20': '+'
+	  };
+	  return encodeURIComponent(str).replace(/[!'()~]|%20/g, function replacer(match) {
+	    return charMap[match];
+	  });
+	}
+
+	/**
+	 * It takes a params object and converts it to a FormData object
+	 *
+	 * @param {Object<string, any>} params - The parameters to be converted to a FormData object.
+	 * @param {Object<string, any>} options - The options object passed to the Axios constructor.
+	 *
+	 * @returns {void}
+	 */
+	function AxiosURLSearchParams(params, options) {
+	  this._pairs = [];
+	  params && toFormData(params, this, options);
+	}
+	const prototype = AxiosURLSearchParams.prototype;
+	prototype.append = function append(name, value) {
+	  this._pairs.push([name, value]);
+	};
+	prototype.toString = function toString(encoder) {
+	  const _encode = encoder ? function (value) {
+	    return encoder.call(this, value, encode$1);
+	  } : encode$1;
+	  return this._pairs.map(function each(pair) {
+	    return _encode(pair[0]) + '=' + _encode(pair[1]);
+	  }, '').join('&');
+	};
+
+	/**
+	 * It replaces URL-encoded forms of `:`, `$`, `,`, and spaces with
+	 * their plain counterparts (`:`, `$`, `,`, `+`).
+	 *
+	 * @param {string} val The value to be encoded.
+	 *
+	 * @returns {string} The encoded value.
+	 */
+	function encode(val) {
+	  return encodeURIComponent(val).replace(/%3A/gi, ':').replace(/%24/g, '$').replace(/%2C/gi, ',').replace(/%20/g, '+');
+	}
+
+	/**
+	 * Build a URL by appending params to the end
+	 *
+	 * @param {string} url The base of the url (e.g., http://www.google.com)
+	 * @param {object} [params] The params to be appended
+	 * @param {?(object|Function)} options
+	 *
+	 * @returns {string} The formatted url
+	 */
+	function buildURL(url, params, options) {
+	  if (!params) {
+	    return url;
+	  }
+	  const _encode = options && options.encode || encode;
+	  const _options = utils$1.isFunction(options) ? {
+	    serialize: options
+	  } : options;
+	  const serializeFn = _options && _options.serialize;
+	  let serializedParams;
+	  if (serializeFn) {
+	    serializedParams = serializeFn(params, _options);
+	  } else {
+	    serializedParams = utils$1.isURLSearchParams(params) ? params.toString() : new AxiosURLSearchParams(params, _options).toString(_encode);
+	  }
+	  if (serializedParams) {
+	    const hashmarkIndex = url.indexOf('#');
+	    if (hashmarkIndex !== -1) {
+	      url = url.slice(0, hashmarkIndex);
+	    }
+	    url += (url.indexOf('?') === -1 ? '?' : '&') + serializedParams;
+	  }
+	  return url;
+	}
+
+	class InterceptorManager {
+	  constructor() {
+	    this.handlers = [];
+	  }
+
+	  /**
+	   * Add a new interceptor to the stack
+	   *
+	   * @param {Function} fulfilled The function to handle `then` for a `Promise`
+	   * @param {Function} rejected The function to handle `reject` for a `Promise`
+	   * @param {Object} options The options for the interceptor, synchronous and runWhen
+	   *
+	   * @return {Number} An ID used to remove interceptor later
+	   */
+	  use(fulfilled, rejected, options) {
+	    this.handlers.push({
+	      fulfilled,
+	      rejected,
+	      synchronous: options ? options.synchronous : false,
+	      runWhen: options ? options.runWhen : null
+	    });
+	    return this.handlers.length - 1;
+	  }
+
+	  /**
+	   * Remove an interceptor from the stack
+	   *
+	   * @param {Number} id The ID that was returned by `use`
+	   *
+	   * @returns {void}
+	   */
+	  eject(id) {
+	    if (this.handlers[id]) {
+	      this.handlers[id] = null;
+	    }
+	  }
+
+	  /**
+	   * Clear all interceptors from the stack
+	   *
+	   * @returns {void}
+	   */
+	  clear() {
+	    if (this.handlers) {
+	      this.handlers = [];
+	    }
+	  }
+
+	  /**
+	   * Iterate over all the registered interceptors
+	   *
+	   * This method is particularly useful for skipping over any
+	   * interceptors that may have become `null` calling `eject`.
+	   *
+	   * @param {Function} fn The function to call for each interceptor
+	   *
+	   * @returns {void}
+	   */
+	  forEach(fn) {
+	    utils$1.forEach(this.handlers, function forEachHandler(h) {
+	      if (h !== null) {
+	        fn(h);
+	      }
+	    });
+	  }
+	}
+
+	var transitionalDefaults = {
+	  silentJSONParsing: true,
+	  forcedJSONParsing: true,
+	  clarifyTimeoutError: false,
+	  legacyInterceptorReqResOrdering: true,
+	  advertiseZstdAcceptEncoding: false
+	};
+
+	var URLSearchParams = url.URLSearchParams;
+
+	const ALPHA = 'abcdefghijklmnopqrstuvwxyz';
+	const DIGIT = '0123456789';
+	const ALPHABET = {
+	  DIGIT,
+	  ALPHA,
+	  ALPHA_DIGIT: ALPHA + ALPHA.toUpperCase() + DIGIT
+	};
+	const generateString = (size = 16, alphabet = ALPHABET.ALPHA_DIGIT) => {
+	  let str = '';
+	  const {
+	    length
+	  } = alphabet;
+	  const randomValues = new Uint32Array(size);
+	  crypto.randomFillSync(randomValues);
+	  for (let i = 0; i < size; i++) {
+	    str += alphabet[randomValues[i] % length];
+	  }
+	  return str;
+	};
+	var platform$1 = {
+	  isNode: true,
+	  classes: {
+	    URLSearchParams,
+	    FormData: FormData$1,
+	    Blob: typeof Blob !== 'undefined' && Blob || null
+	  },
+	  ALPHABET,
+	  generateString,
+	  protocols: ['http', 'https', 'file', 'data']
+	};
+
+	const hasBrowserEnv = typeof window !== 'undefined' && typeof document !== 'undefined';
+	const _navigator = typeof navigator === 'object' && navigator || undefined;
+
+	/**
+	 * Determine if we're running in a standard browser environment
+	 *
+	 * This allows axios to run in a web worker, and react-native.
+	 * Both environments support XMLHttpRequest, but not fully standard globals.
+	 *
+	 * web workers:
+	 *  typeof window -> undefined
+	 *  typeof document -> undefined
+	 *
+	 * react-native:
+	 *  navigator.product -> 'ReactNative'
+	 * nativescript
+	 *  navigator.product -> 'NativeScript' or 'NS'
+	 *
+	 * @returns {boolean}
+	 */
+	const hasStandardBrowserEnv = hasBrowserEnv && (!_navigator || ['ReactNative', 'NativeScript', 'NS'].indexOf(_navigator.product) < 0);
+
+	/**
+	 * Determine if we're running in a standard browser webWorker environment
+	 *
+	 * Although the `isStandardBrowserEnv` method indicates that
+	 * `allows axios to run in a web worker`, the WebWorker will still be
+	 * filtered out due to its judgment standard
+	 * `typeof window !== 'undefined' && typeof document !== 'undefined'`.
+	 * This leads to a problem when axios post `FormData` in webWorker
+	 */
+	const hasStandardBrowserWebWorkerEnv = (() => {
+	  return typeof WorkerGlobalScope !== 'undefined' &&
+	  // eslint-disable-next-line no-undef
+	  self instanceof WorkerGlobalScope && typeof self.importScripts === 'function';
+	})();
+	const origin = hasBrowserEnv && window.location.href || 'http://localhost';
+
+	var utils = /*#__PURE__*/Object.freeze({
+	  __proto__: null,
+	  hasBrowserEnv: hasBrowserEnv,
+	  hasStandardBrowserEnv: hasStandardBrowserEnv,
+	  hasStandardBrowserWebWorkerEnv: hasStandardBrowserWebWorkerEnv,
+	  navigator: _navigator,
+	  origin: origin
+	});
+
+	var platform = {
+	  ...utils,
+	  ...platform$1
+	};
+
+	function toURLEncodedForm(data, options) {
+	  return toFormData(data, new platform.classes.URLSearchParams(), {
+	    visitor: function (value, key, path, helpers) {
+	      if (platform.isNode && utils$1.isBuffer(value)) {
+	        this.append(key, value.toString('base64'));
+	        return false;
+	      }
+	      return helpers.defaultVisitor.apply(this, arguments);
+	    },
+	    ...options
+	  });
+	}
+
+	/**
+	 * It takes a string like `foo[x][y][z]` and returns an array like `['foo', 'x', 'y', 'z']
+	 *
+	 * @param {string} name - The name of the property to get.
+	 *
+	 * @returns An array of strings.
+	 */
+	function parsePropPath(name) {
+	  // foo[x][y][z]
+	  // foo.x.y.z
+	  // foo-x-y-z
+	  // foo x y z
+	  return utils$1.matchAll(/\w+|\[(\w*)]/g, name).map(match => {
+	    return match[0] === '[]' ? '' : match[1] || match[0];
+	  });
+	}
+
+	/**
+	 * Convert an array to an object.
+	 *
+	 * @param {Array<any>} arr - The array to convert to an object.
+	 *
+	 * @returns An object with the same keys and values as the array.
+	 */
+	function arrayToObject(arr) {
+	  const obj = {};
+	  const keys = Object.keys(arr);
+	  let i;
+	  const len = keys.length;
+	  let key;
+	  for (i = 0; i < len; i++) {
+	    key = keys[i];
+	    obj[key] = arr[key];
+	  }
+	  return obj;
+	}
+
+	/**
+	 * It takes a FormData object and returns a JavaScript object
+	 *
+	 * @param {string} formData The FormData object to convert to JSON.
+	 *
+	 * @returns {Object<string, any> | null} The converted object.
+	 */
+	function formDataToJSON(formData) {
+	  function buildPath(path, value, target, index) {
+	    let name = path[index++];
+	    if (name === '__proto__') return true;
+	    const isNumericKey = Number.isFinite(+name);
+	    const isLast = index >= path.length;
+	    name = !name && utils$1.isArray(target) ? target.length : name;
+	    if (isLast) {
+	      if (utils$1.hasOwnProp(target, name)) {
+	        target[name] = utils$1.isArray(target[name]) ? target[name].concat(value) : [target[name], value];
+	      } else {
+	        target[name] = value;
+	      }
+	      return !isNumericKey;
+	    }
+	    if (!utils$1.hasOwnProp(target, name) || !utils$1.isObject(target[name])) {
+	      target[name] = [];
+	    }
+	    const result = buildPath(path, value, target[name], index);
+	    if (result && utils$1.isArray(target[name])) {
+	      target[name] = arrayToObject(target[name]);
+	    }
+	    return !isNumericKey;
+	  }
+	  if (utils$1.isFormData(formData) && utils$1.isFunction(formData.entries)) {
+	    const obj = {};
+	    utils$1.forEachEntry(formData, (name, value) => {
+	      buildPath(parsePropPath(name), value, obj, 0);
+	    });
+	    return obj;
+	  }
+	  return null;
+	}
+
+	const own = (obj, key) => obj != null && utils$1.hasOwnProp(obj, key) ? obj[key] : undefined;
+
+	/**
+	 * It takes a string, tries to parse it, and if it fails, it returns the stringified version
+	 * of the input
+	 *
+	 * @param {any} rawValue - The value to be stringified.
+	 * @param {Function} parser - A function that parses a string into a JavaScript object.
+	 * @param {Function} encoder - A function that takes a value and returns a string.
+	 *
+	 * @returns {string} A stringified version of the rawValue.
+	 */
+	function stringifySafely(rawValue, parser, encoder) {
+	  if (utils$1.isString(rawValue)) {
+	    try {
+	      (parser || JSON.parse)(rawValue);
+	      return utils$1.trim(rawValue);
+	    } catch (e) {
+	      if (e.name !== 'SyntaxError') {
+	        throw e;
+	      }
+	    }
+	  }
+	  return (encoder || JSON.stringify)(rawValue);
+	}
+	const defaults = {
+	  transitional: transitionalDefaults,
+	  adapter: ['xhr', 'http', 'fetch'],
+	  transformRequest: [function transformRequest(data, headers) {
+	    const contentType = headers.getContentType() || '';
+	    const hasJSONContentType = contentType.indexOf('application/json') > -1;
+	    const isObjectPayload = utils$1.isObject(data);
+	    if (isObjectPayload && utils$1.isHTMLForm(data)) {
+	      data = new FormData(data);
+	    }
+	    const isFormData = utils$1.isFormData(data);
+	    if (isFormData) {
+	      return hasJSONContentType ? JSON.stringify(formDataToJSON(data)) : data;
+	    }
+	    if (utils$1.isArrayBuffer(data) || utils$1.isBuffer(data) || utils$1.isStream(data) || utils$1.isFile(data) || utils$1.isBlob(data) || utils$1.isReadableStream(data)) {
+	      return data;
+	    }
+	    if (utils$1.isArrayBufferView(data)) {
+	      return data.buffer;
+	    }
+	    if (utils$1.isURLSearchParams(data)) {
+	      headers.setContentType('application/x-www-form-urlencoded;charset=utf-8', false);
+	      return data.toString();
+	    }
+	    let isFileList;
+	    if (isObjectPayload) {
+	      const formSerializer = own(this, 'formSerializer');
+	      if (contentType.indexOf('application/x-www-form-urlencoded') > -1) {
+	        return toURLEncodedForm(data, formSerializer).toString();
+	      }
+	      if ((isFileList = utils$1.isFileList(data)) || contentType.indexOf('multipart/form-data') > -1) {
+	        const env = own(this, 'env');
+	        const _FormData = env && env.FormData;
+	        return toFormData(isFileList ? {
+	          'files[]': data
+	        } : data, _FormData && new _FormData(), formSerializer);
+	      }
+	    }
+	    if (isObjectPayload || hasJSONContentType) {
+	      headers.setContentType('application/json', false);
+	      return stringifySafely(data);
+	    }
+	    return data;
+	  }],
+	  transformResponse: [function transformResponse(data) {
+	    const transitional = own(this, 'transitional') || defaults.transitional;
+	    const forcedJSONParsing = transitional && transitional.forcedJSONParsing;
+	    const responseType = own(this, 'responseType');
+	    const JSONRequested = responseType === 'json';
+	    if (utils$1.isResponse(data) || utils$1.isReadableStream(data)) {
+	      return data;
+	    }
+	    if (data && utils$1.isString(data) && (forcedJSONParsing && !responseType || JSONRequested)) {
+	      const silentJSONParsing = transitional && transitional.silentJSONParsing;
+	      const strictJSONParsing = !silentJSONParsing && JSONRequested;
+	      try {
+	        return JSON.parse(data, own(this, 'parseReviver'));
+	      } catch (e) {
+	        if (strictJSONParsing) {
+	          if (e.name === 'SyntaxError') {
+	            throw AxiosError.from(e, AxiosError.ERR_BAD_RESPONSE, this, null, own(this, 'response'));
+	          }
+	          throw e;
+	        }
+	      }
+	    }
+	    return data;
+	  }],
+	  /**
+	   * A timeout in milliseconds to abort a request. If set to 0 (default) a
+	   * timeout is not created.
+	   */
+	  timeout: 0,
+	  xsrfCookieName: 'XSRF-TOKEN',
+	  xsrfHeaderName: 'X-XSRF-TOKEN',
+	  maxContentLength: -1,
+	  maxBodyLength: -1,
+	  env: {
+	    FormData: platform.classes.FormData,
+	    Blob: platform.classes.Blob
+	  },
+	  validateStatus: function validateStatus(status) {
+	    return status >= 200 && status < 300;
+	  },
+	  headers: {
+	    common: {
+	      Accept: 'application/json, text/plain, */*',
+	      'Content-Type': undefined
+	    }
+	  }
+	};
+	utils$1.forEach(['delete', 'get', 'head', 'post', 'put', 'patch', 'query'], method => {
+	  defaults.headers[method] = {};
+	});
+
 	/**
 	 * Transform the data for a request or a response
 	 *
@@ -31728,7 +33083,7 @@ function requireAxios$1 () {
 	  if (!response.status || !validateStatus || validateStatus(response.status)) {
 	    resolve(response);
 	  } else {
-	    reject(new AxiosError('Request failed with status code ' + response.status, [AxiosError.ERR_BAD_REQUEST, AxiosError.ERR_BAD_RESPONSE][Math.floor(response.status / 100) - 4], response.config, response.request, response));
+	    reject(new AxiosError('Request failed with status code ' + response.status, response.status >= 400 && response.status < 500 ? AxiosError.ERR_BAD_REQUEST : AxiosError.ERR_BAD_RESPONSE, response.config, response.request, response));
 	  }
 	}
 
@@ -31773,7 +33128,7 @@ function requireAxios$1 () {
 	 */
 	function buildFullPath(baseURL, requestedURL, allowAbsoluteUrls) {
 	  let isRelativeUrl = !isAbsoluteURL(requestedURL);
-	  if (baseURL && (isRelativeUrl || allowAbsoluteUrls == false)) {
+	  if (baseURL && (isRelativeUrl || allowAbsoluteUrls === false)) {
 	    return combineURLs(baseURL, requestedURL);
 	  }
 	  return requestedURL;
@@ -31875,14 +33230,16 @@ function requireAxios$1 () {
 	  return process.env[key.toLowerCase()] || process.env[key.toUpperCase()] || '';
 	}
 
-	const VERSION = "1.15.0";
+	const VERSION = "1.17.0";
 
 	function parseProtocol(url) {
-	  const match = /^([-+\w]{1,25})(:?\/\/|:)/.exec(url);
+	  const match = /^([-+\w]{1,25}):(?:\/\/)?/.exec(url);
 	  return match && match[1] || '';
 	}
 
-	const DATA_URL_PATTERN = /^(?:([^;]+);)?(?:[^;]+;)?(base64|),([\s\S]*)$/;
+	// RFC 2397: data:[<mediatype>][;base64],<data>
+	// mediatype = type/subtype followed by optional ;name=value parameters
+	const DATA_URL_PATTERN = /^([^,;]+\/[^,;]+)?((?:;[^,;=]+=[^,;]+)*)(;base64)?,([\s\S]*)$/;
 
 	/**
 	 * Parse data uri to a Buffer or Blob
@@ -31906,10 +33263,20 @@ function requireAxios$1 () {
 	    if (!match) {
 	      throw new AxiosError('Invalid URL', AxiosError.ERR_INVALID_URL);
 	    }
-	    const mime = match[1];
-	    const isBase64 = match[2];
-	    const body = match[3];
-	    const buffer = Buffer.from(decodeURIComponent(body), isBase64 ? 'base64' : 'utf8');
+	    const type = match[1];
+	    const params = match[2];
+	    const encoding = match[3] ? 'base64' : 'utf8';
+	    const body = match[4];
+
+	    // RFC 2397 section 3: default mediatype is text/plain;charset=US-ASCII
+	    // Bare `data:,` leaves mime undefined; Blob normalises that to "" per spec.
+	    let mime;
+	    if (type) {
+	      mime = params ? type + params : type;
+	    } else if (params) {
+	      mime = 'text/plain' + params;
+	    }
+	    const buffer = Buffer.from(decodeURIComponent(body), encoding);
 	    if (asBlob) {
 	      if (!_Blob) {
 	        throw new AxiosError('Blob is not supported', AxiosError.ERR_NOT_SUPPORT);
@@ -32066,7 +33433,8 @@ function requireAxios$1 () {
 	    if (isStringValue) {
 	      value = textEncoder.encode(String(value).replace(/\r?\n|\r\n?/g, CRLF));
 	    } else {
-	      headers += `Content-Type: ${value.type || 'application/octet-stream'}${CRLF}`;
+	      const safeType = String(value.type || 'application/octet-stream').replace(/[\r\n]/g, '');
+	      headers += `Content-Type: ${safeType}${CRLF}`;
 	    }
 	    this.headers = textEncoder.encode(headers + CRLF);
 	    this.contentLength = isStringValue ? value.byteLength : value.size;
@@ -32101,10 +33469,10 @@ function requireAxios$1 () {
 	    boundary = tag + '-' + platform.generateString(size, BOUNDARY_ALPHABET)
 	  } = options || {};
 	  if (!utils$1.isFormData(form)) {
-	    throw TypeError('FormData instance required');
+	    throw new TypeError('FormData instance required');
 	  }
 	  if (boundary.length < 1 || boundary.length > 70) {
-	    throw Error('boundary must be 10-70 characters long');
+	    throw new Error('boundary must be 1-70 characters long');
 	  }
 	  const boundaryBytes = textEncoder.encode('--' + boundary + CRLF);
 	  const footerBytes = textEncoder.encode('--' + boundary + '--' + CRLF);
@@ -32154,6 +33522,84 @@ function requireAxios$1 () {
 	  }
 	}
 
+	class Http2Sessions {
+	  constructor() {
+	    this.sessions = Object.create(null);
+	  }
+	  getSession(authority, options) {
+	    options = Object.assign({
+	      sessionTimeout: 1000
+	    }, options);
+	    let authoritySessions = this.sessions[authority];
+	    if (authoritySessions) {
+	      let len = authoritySessions.length;
+	      for (let i = 0; i < len; i++) {
+	        const [sessionHandle, sessionOptions] = authoritySessions[i];
+	        if (!sessionHandle.destroyed && !sessionHandle.closed && util.isDeepStrictEqual(sessionOptions, options)) {
+	          return sessionHandle;
+	        }
+	      }
+	    }
+	    const session = http2.connect(authority, options);
+	    let removed;
+	    let timer;
+	    const removeSession = () => {
+	      if (removed) {
+	        return;
+	      }
+	      removed = true;
+	      if (timer) {
+	        clearTimeout(timer);
+	        timer = null;
+	      }
+	      let entries = authoritySessions,
+	        len = entries.length,
+	        i = len;
+	      while (i--) {
+	        if (entries[i][0] === session) {
+	          if (len === 1) {
+	            delete this.sessions[authority];
+	          } else {
+	            entries.splice(i, 1);
+	          }
+	          if (!session.closed) {
+	            session.close();
+	          }
+	          return;
+	        }
+	      }
+	    };
+	    const originalRequestFn = session.request;
+	    const {
+	      sessionTimeout
+	    } = options;
+	    if (sessionTimeout != null) {
+	      let streamsCount = 0;
+	      session.request = function () {
+	        const stream = originalRequestFn.apply(this, arguments);
+	        streamsCount++;
+	        if (timer) {
+	          clearTimeout(timer);
+	          timer = null;
+	        }
+	        stream.once('close', () => {
+	          if (! --streamsCount) {
+	            timer = setTimeout(() => {
+	              timer = null;
+	              removeSession();
+	            }, sessionTimeout);
+	          }
+	        });
+	        return stream;
+	      };
+	    }
+	    session.once('close', removeSession);
+	    let entry = [session, options];
+	    authoritySessions ? authoritySessions.push(entry) : authoritySessions = this.sessions[authority] = [entry];
+	    return session;
+	  }
+	}
+
 	const callbackify = (fn, reducer) => {
 	  return utils$1.isAsyncFn(fn) ? function (...args) {
 	    const cb = args.pop();
@@ -32167,6 +33613,47 @@ function requireAxios$1 () {
 	  } : fn;
 	};
 
+	const LOOPBACK_HOSTNAMES = new Set(['localhost']);
+	const isIPv4Loopback = host => {
+	  const parts = host.split('.');
+	  if (parts.length !== 4) return false;
+	  if (parts[0] !== '127') return false;
+	  return parts.every(p => /^\d+$/.test(p) && Number(p) >= 0 && Number(p) <= 255);
+	};
+	const isIPv6Loopback = host => {
+	  // Collapse all-zero groups: any form of ::1 / 0:0:...:0:1
+	  // First, strip any leading "::" by normalising with Set lookup of common forms,
+	  // then fall back to structural check.
+	  if (host === '::1') return true;
+
+	  // Check IPv4-mapped IPv6 loopback: ::ffff:<v4-loopback> or ::ffff:<hex-v4-loopback>
+	  // Node's URL parser normalises ::ffff:127.0.0.1 → ::ffff:7f00:1
+	  const v4MappedDotted = host.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
+	  if (v4MappedDotted) return isIPv4Loopback(v4MappedDotted[1]);
+	  const v4MappedHex = host.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i);
+	  if (v4MappedHex) {
+	    const high = parseInt(v4MappedHex[1], 16);
+	    // High 16 bits must start with 127 (0x7f) — i.e. 0x7f00..0x7fff
+	    return high >= 0x7f00 && high <= 0x7fff;
+	  }
+
+	  // Full-form ::1 variants: any number of zero groups followed by trailing 1
+	  // e.g. 0:0:0:0:0:0:0:1, 0000:...:0001
+	  const groups = host.split(':');
+	  if (groups.length === 8) {
+	    for (let i = 0; i < 7; i++) {
+	      if (!/^0+$/.test(groups[i])) return false;
+	    }
+	    return /^0*1$/.test(groups[7]);
+	  }
+	  return false;
+	};
+	const isLoopback = host => {
+	  if (!host) return false;
+	  if (LOOPBACK_HOSTNAMES.has(host)) return true;
+	  if (isIPv4Loopback(host)) return true;
+	  return isIPv6Loopback(host);
+	};
 	const DEFAULT_PORTS = {
 	  http: 80,
 	  https: 443,
@@ -32196,6 +33683,27 @@ function requireAxios$1 () {
 	  }
 	  return [entryHost, entryPort];
 	};
+
+	// Convert IPv4-mapped IPv6 (::ffff:0:0/96 prefix) to IPv4 dotted form so both
+	// sides of a NO_PROXY comparison see the same canonical address. Without this,
+	// `NO_PROXY=192.168.1.5` would not match a request to `http://[::ffff:192.168.1.5]/`
+	// (Node's URL parser normalises that to `[::ffff:c0a8:105]`), and vice-versa,
+	// allowing the proxy-bypass policy to be circumvented by using the alternate
+	// representation. Returns the input unchanged when not IPv4-mapped.
+	const IPV4_MAPPED_DOTTED_RE = /^(?:::|(?:0{1,4}:){1,4}:|(?:0{1,4}:){5})ffff:(\d+\.\d+\.\d+\.\d+)$/i;
+	const IPV4_MAPPED_HEX_RE = /^(?:::|(?:0{1,4}:){1,4}:|(?:0{1,4}:){5})ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i;
+	const unmapIPv4MappedIPv6 = host => {
+	  if (typeof host !== 'string' || host.indexOf(':') === -1) return host;
+	  const dotted = host.match(IPV4_MAPPED_DOTTED_RE);
+	  if (dotted) return dotted[1];
+	  const hex = host.match(IPV4_MAPPED_HEX_RE);
+	  if (hex) {
+	    const high = parseInt(hex[1], 16);
+	    const low = parseInt(hex[2], 16);
+	    return `${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`;
+	  }
+	  return host;
+	};
 	const normalizeNoProxyHost = hostname => {
 	  if (!hostname) {
 	    return hostname;
@@ -32203,7 +33711,7 @@ function requireAxios$1 () {
 	  if (hostname.charAt(0) === '[' && hostname.charAt(hostname.length - 1) === ']') {
 	    hostname = hostname.slice(1, -1);
 	  }
-	  return hostname.replace(/\.+$/, '');
+	  return unmapIPv4MappedIPv6(hostname.replace(/\.+$/, ''));
 	};
 	function shouldBypassProxy(location) {
 	  let parsed;
@@ -32239,7 +33747,7 @@ function requireAxios$1 () {
 	    if (entryHost.charAt(0) === '.') {
 	      return hostname.endsWith(entryHost);
 	    }
-	    return hostname === entryHost;
+	    return hostname === entryHost || isLoopback(hostname) && isLoopback(entryHost);
 	  });
 	}
 
@@ -32326,19 +33834,22 @@ function requireAxios$1 () {
 	  let bytesNotified = 0;
 	  const _speedometer = speedometer(50, 250);
 	  return throttle(e => {
-	    const loaded = e.loaded;
+	    if (!e || typeof e.loaded !== 'number') {
+	      return;
+	    }
+	    const rawLoaded = e.loaded;
 	    const total = e.lengthComputable ? e.total : undefined;
-	    const progressBytes = loaded - bytesNotified;
+	    const loaded = total != null ? Math.min(rawLoaded, total) : rawLoaded;
+	    const progressBytes = Math.max(0, loaded - bytesNotified);
 	    const rate = _speedometer(progressBytes);
-	    const inRange = loaded <= total;
-	    bytesNotified = loaded;
+	    bytesNotified = Math.max(bytesNotified, loaded);
 	    const data = {
 	      loaded,
 	      total,
 	      progress: total ? loaded / total : undefined,
 	      bytes: progressBytes,
 	      rate: rate ? rate : undefined,
-	      estimated: rate && total && inRange ? (total - loaded) / rate : undefined,
+	      estimated: rate && total ? (total - loaded) / rate : undefined,
 	      event: e,
 	      lengthComputable: total != null,
 	      [isDownloadStream ? 'download' : 'upload']: true
@@ -32416,7 +33927,34 @@ function requireAxios$1 () {
 	    const bytes = groups * 3 - (pad || 0);
 	    return bytes > 0 ? bytes : 0;
 	  }
-	  return Buffer.byteLength(body, 'utf8');
+	  if (typeof Buffer !== 'undefined' && typeof Buffer.byteLength === 'function') {
+	    return Buffer.byteLength(body, 'utf8');
+	  }
+
+	  // Compute UTF-8 byte length directly from UTF-16 code units without allocating
+	  // a byte buffer (TextEncoder.encode would defeat the DoS guard on large bodies).
+	  // Using body.length here would undercount non-ASCII (e.g. '€' is 1 code unit
+	  // but 3 UTF-8 bytes).
+	  let bytes = 0;
+	  for (let i = 0, len = body.length; i < len; i++) {
+	    const c = body.charCodeAt(i);
+	    if (c < 0x80) {
+	      bytes += 1;
+	    } else if (c < 0x800) {
+	      bytes += 2;
+	    } else if (c >= 0xd800 && c <= 0xdbff && i + 1 < len) {
+	      const next = body.charCodeAt(i + 1);
+	      if (next >= 0xdc00 && next <= 0xdfff) {
+	        bytes += 4;
+	        i++;
+	      } else {
+	        bytes += 3;
+	      }
+	    } else {
+	      bytes += 3;
+	    }
+	  }
+	  return bytes;
 	}
 
 	const zlibOptions = {
@@ -32427,108 +33965,119 @@ function requireAxios$1 () {
 	  flush: zlib.constants.BROTLI_OPERATION_FLUSH,
 	  finishFlush: zlib.constants.BROTLI_OPERATION_FLUSH
 	};
+	const zstdOptions = {
+	  flush: zlib.constants.ZSTD_e_flush,
+	  finishFlush: zlib.constants.ZSTD_e_flush
+	};
 	const isBrotliSupported = utils$1.isFunction(zlib.createBrotliDecompress);
+	const isZstdSupported = utils$1.isFunction(zlib.createZstdDecompress);
+	const ACCEPT_ENCODING = 'gzip, compress, deflate' + (isBrotliSupported ? ', br' : '');
+	const ACCEPT_ENCODING_WITH_ZSTD = ACCEPT_ENCODING + (isZstdSupported ? ', zstd' : '');
 	const {
 	  http: httpFollow,
 	  https: httpsFollow
 	} = followRedirects;
 	const isHttps = /https:?/;
+	const FORM_DATA_CONTENT_HEADERS$1 = ['content-type', 'content-length'];
+	function setFormDataHeaders$1(headers, formHeaders, policy) {
+	  if (policy !== 'content-only') {
+	    headers.set(formHeaders);
+	    return;
+	  }
+	  Object.entries(formHeaders).forEach(([key, val]) => {
+	    if (FORM_DATA_CONTENT_HEADERS$1.includes(key.toLowerCase())) {
+	      headers.set(key, val);
+	    }
+	  });
+	}
+
+	// Symbols used to bind a single 'error' listener to a pooled socket and track
+	// the request currently owning that socket across keep-alive reuse (issue #10780).
+	const kAxiosSocketListener = Symbol('axios.http.socketListener');
+	const kAxiosCurrentReq = Symbol('axios.http.currentReq');
+
+	// Tags HttpsProxyAgent instances installed by setProxy() so the redirect path
+	// can strip them without clobbering a user-supplied agent that happens to be
+	// an HttpsProxyAgent.
+	const kAxiosInstalledTunnel = Symbol('axios.http.installedTunnel');
+
+	// Cache of CONNECT-tunneling agents keyed by proxy config so repeat requests
+	// through the same proxy reuse a single agent (and its socket pool). The
+	// keyspace is bounded by the set of distinct proxy configs the process uses,
+	// so unbounded growth is not a concern in practice.
+	const tunnelingAgentCache = new Map();
+	const tunnelingAgentCacheUser = new WeakMap();
+	function getTunnelingAgent(agentOptions, userHttpsAgent) {
+	  const key = agentOptions.protocol + '//' + agentOptions.hostname + ':' + (agentOptions.port || '') + '#' + (agentOptions.auth || '');
+	  const cache = userHttpsAgent ? tunnelingAgentCacheUser.get(userHttpsAgent) || tunnelingAgentCacheUser.set(userHttpsAgent, new Map()).get(userHttpsAgent) : tunnelingAgentCache;
+	  let agent = cache.get(key);
+	  if (agent) return agent;
+	  // Forward the user's TLS options (custom CA, rejectUnauthorized, client cert,
+	  // etc.) into the tunneling agent so they apply to the origin TLS upgrade
+	  // performed after CONNECT. Our proxy fields take precedence on conflict.
+	  const merged = userHttpsAgent && userHttpsAgent.options ? {
+	    ...userHttpsAgent.options,
+	    ...agentOptions
+	  } : agentOptions;
+	  agent = new HttpsProxyAgent(merged);
+	  if (userHttpsAgent && userHttpsAgent.options) {
+	    const originTLSOptions = {
+	      ...userHttpsAgent.options
+	    };
+	    const callback = agent.callback;
+	    agent.callback = function axiosTunnelingAgentCallback(req, opts) {
+	      // HttpsProxyAgent v5 reads callback opts for the post-CONNECT origin TLS upgrade.
+	      return callback.call(this, req, {
+	        ...originTLSOptions,
+	        ...opts
+	      });
+	    };
+	  }
+	  agent[kAxiosInstalledTunnel] = true;
+	  cache.set(key, agent);
+	  return agent;
+	}
 	const supportedProtocols = platform.protocols.map(protocol => {
 	  return protocol + ':';
 	});
+
+	// Node's WHATWG URL parser returns `username` and `password` percent-encoded.
+	// Decode before composing the `auth` option so credentials such as
+	// `my%40email.com:pass` are sent as `my@email.com:pass`. Falls back to the
+	// original value for malformed input so a bad encoding never throws.
+	const decodeURIComponentSafe$1 = value => {
+	  if (!utils$1.isString(value)) {
+	    return value;
+	  }
+	  try {
+	    return decodeURIComponent(value);
+	  } catch (error) {
+	    return value;
+	  }
+	};
 	const flushOnFinish = (stream, [throttled, flush]) => {
 	  stream.on('end', flush).on('error', flush);
 	  return throttled;
 	};
-	class Http2Sessions {
-	  constructor() {
-	    this.sessions = Object.create(null);
-	  }
-	  getSession(authority, options) {
-	    options = Object.assign({
-	      sessionTimeout: 1000
-	    }, options);
-	    let authoritySessions = this.sessions[authority];
-	    if (authoritySessions) {
-	      let len = authoritySessions.length;
-	      for (let i = 0; i < len; i++) {
-	        const [sessionHandle, sessionOptions] = authoritySessions[i];
-	        if (!sessionHandle.destroyed && !sessionHandle.closed && util.isDeepStrictEqual(sessionOptions, options)) {
-	          return sessionHandle;
-	        }
-	      }
-	    }
-	    const session = http2.connect(authority, options);
-	    let removed;
-	    const removeSession = () => {
-	      if (removed) {
-	        return;
-	      }
-	      removed = true;
-	      let entries = authoritySessions,
-	        len = entries.length,
-	        i = len;
-	      while (i--) {
-	        if (entries[i][0] === session) {
-	          if (len === 1) {
-	            delete this.sessions[authority];
-	          } else {
-	            entries.splice(i, 1);
-	          }
-	          if (!session.closed) {
-	            session.close();
-	          }
-	          return;
-	        }
-	      }
-	    };
-	    const originalRequestFn = session.request;
-	    const {
-	      sessionTimeout
-	    } = options;
-	    if (sessionTimeout != null) {
-	      let timer;
-	      let streamsCount = 0;
-	      session.request = function () {
-	        const stream = originalRequestFn.apply(this, arguments);
-	        streamsCount++;
-	        if (timer) {
-	          clearTimeout(timer);
-	          timer = null;
-	        }
-	        stream.once('close', () => {
-	          if (! --streamsCount) {
-	            timer = setTimeout(() => {
-	              timer = null;
-	              removeSession();
-	            }, sessionTimeout);
-	          }
-	        });
-	        return stream;
-	      };
-	    }
-	    session.once('close', removeSession);
-	    let entry = [session, options];
-	    authoritySessions ? authoritySessions.push(entry) : authoritySessions = this.sessions[authority] = [entry];
-	    return session;
-	  }
-	}
 	const http2Sessions = new Http2Sessions();
 
 	/**
-	 * If the proxy or config beforeRedirects functions are defined, call them with the options
-	 * object.
+	 * If the proxy, auth, or config beforeRedirects functions are defined, call them
+	 * with the options object.
 	 *
 	 * @param {Object<string, any>} options - The options object that was passed to the request.
 	 *
 	 * @returns {Object<string, any>}
 	 */
-	function dispatchBeforeRedirect(options, responseDetails) {
+	function dispatchBeforeRedirect(options, responseDetails, requestDetails) {
 	  if (options.beforeRedirects.proxy) {
 	    options.beforeRedirects.proxy(options);
 	  }
+	  if (options.beforeRedirects.auth) {
+	    options.beforeRedirects.auth(options);
+	  }
 	  if (options.beforeRedirects.config) {
-	    options.beforeRedirects.config(options, responseDetails);
+	    options.beforeRedirects.config(options, responseDetails, requestDetails);
 	  }
 	}
 
@@ -32541,7 +34090,7 @@ function requireAxios$1 () {
 	 *
 	 * @returns {http.ClientRequestArgs}
 	 */
-	function setProxy(options, configProxy, location) {
+	function setProxy(options, configProxy, location, isRedirect, configHttpsAgent) {
 	  let proxy = configProxy;
 	  if (!proxy && proxy !== false) {
 	    const proxyUrl = getProxyForUrl(location);
@@ -32551,39 +34100,134 @@ function requireAxios$1 () {
 	      }
 	    }
 	  }
-	  if (proxy) {
-	    // Basic proxy authorization
-	    if (proxy.username) {
-	      proxy.auth = (proxy.username || '') + ':' + (proxy.password || '');
+	  // On redirect re-invocation, strip any stale Proxy-Authorization header carried
+	  // over from the prior request (e.g. new target no longer uses a proxy, or uses
+	  // a different proxy). Skip on the initial request so user-supplied headers are
+	  // preserved. Header names are case-insensitive, so remove every case variant.
+	  if (isRedirect && options.headers) {
+	    for (const name of Object.keys(options.headers)) {
+	      if (name.toLowerCase() === 'proxy-authorization') {
+	        delete options.headers[name];
+	      }
 	    }
-	    if (proxy.auth) {
-	      // Support proxy auth object form
-	      const validProxyAuth = Boolean(proxy.auth.username || proxy.auth.password);
+	  }
+	  // Strip any tunneling agent we installed for the previous hop so a redirect
+	  // that drops the proxy or crosses an HTTPS↔HTTP boundary doesn't reuse a
+	  // stale one. Match on our Symbol marker so a user-supplied HttpsProxyAgent
+	  // (which won't carry the marker) is left alone.
+	  if (isRedirect && options.agent && options.agent[kAxiosInstalledTunnel]) {
+	    options.agent = undefined;
+	  }
+	  if (proxy) {
+	    // Read proxy fields without traversing the prototype chain. URL instances expose
+	    // username/password/hostname/host/port/protocol via getters on URL.prototype (so
+	    // direct reads are shielded), but plain object proxies — and the `auth` field
+	    // (which URL does not expose) — must be guarded so a polluted Object.prototype
+	    // (e.g. Object.prototype.auth = { username, password }) cannot inject
+	    // attacker-controlled credentials into the Proxy-Authorization header or
+	    // redirect proxying to an attacker-controlled host.
+	    const isProxyURL = proxy instanceof URL;
+	    const readProxyField = key => isProxyURL || utils$1.hasOwnProp(proxy, key) ? proxy[key] : undefined;
+	    const proxyUsername = readProxyField('username');
+	    const proxyPassword = readProxyField('password');
+	    let proxyAuth = utils$1.hasOwnProp(proxy, 'auth') ? proxy.auth : undefined;
+
+	    // Basic proxy authorization
+	    if (proxyUsername) {
+	      proxyAuth = (proxyUsername || '') + ':' + (proxyPassword || '');
+	    }
+	    if (proxyAuth) {
+	      // Support proxy auth object form. Read sub-fields via own-prop checks so a
+	      // plain object inheriting from polluted Object.prototype cannot leak creds.
+	      const authIsObject = typeof proxyAuth === 'object';
+	      const authUsername = authIsObject && utils$1.hasOwnProp(proxyAuth, 'username') ? proxyAuth.username : undefined;
+	      const authPassword = authIsObject && utils$1.hasOwnProp(proxyAuth, 'password') ? proxyAuth.password : undefined;
+	      const validProxyAuth = Boolean(authUsername || authPassword);
 	      if (validProxyAuth) {
-	        proxy.auth = (proxy.auth.username || '') + ':' + (proxy.auth.password || '');
-	      } else if (typeof proxy.auth === 'object') {
+	        proxyAuth = (authUsername || '') + ':' + (authPassword || '');
+	      } else if (authIsObject) {
 	        throw new AxiosError('Invalid proxy authorization', AxiosError.ERR_BAD_OPTION, {
 	          proxy
 	        });
 	      }
-	      const base64 = Buffer.from(proxy.auth, 'utf8').toString('base64');
-	      options.headers['Proxy-Authorization'] = 'Basic ' + base64;
 	    }
-	    options.headers.host = options.hostname + (options.port ? ':' + options.port : '');
-	    const proxyHost = proxy.hostname || proxy.host;
-	    options.hostname = proxyHost;
-	    // Replace 'host' since options is not a URL object
-	    options.host = proxyHost;
-	    options.port = proxy.port;
-	    options.path = location;
-	    if (proxy.protocol) {
-	      options.protocol = proxy.protocol.includes(':') ? proxy.protocol : `${proxy.protocol}:`;
+	    const targetIsHttps = isHttps.test(options.protocol);
+	    if (targetIsHttps) {
+	      // CONNECT-tunneling path for HTTPS targets. Preserves end-to-end TLS to
+	      // the origin so the proxy cannot inspect the URL, headers, or body — the
+	      // behavior already promised by THREATMODEL.md (T-R9). HttpsProxyAgent
+	      // sends Proxy-Authorization on the CONNECT request only, never on the
+	      // wrapped TLS request, which is why we don't stamp it onto
+	      // options.headers here. If the user already supplied an HttpsProxyAgent,
+	      // they own tunneling end-to-end and we leave them alone; otherwise we
+	      // install our own tunneling agent and forward their TLS options (if any)
+	      // so a custom httpsAgent for cert pinning / rejectUnauthorized still
+	      // applies to the origin TLS upgrade.
+	      if (!(configHttpsAgent instanceof HttpsProxyAgent)) {
+	        const proxyHost = readProxyField('hostname') || readProxyField('host');
+	        const proxyPort = readProxyField('port');
+	        const rawProxyProtocol = readProxyField('protocol');
+	        const normalizedProtocol = rawProxyProtocol ? rawProxyProtocol.includes(':') ? rawProxyProtocol : `${rawProxyProtocol}:` : 'http:';
+	        // Bracket IPv6 literals for URL parsing; URL.hostname strips the
+	        // brackets again on read so the agent receives the raw form.
+	        const proxyHostForURL = proxyHost && proxyHost.includes(':') && !proxyHost.startsWith('[') ? `[${proxyHost}]` : proxyHost;
+	        const proxyURL = new URL(`${normalizedProtocol}//${proxyHostForURL}${proxyPort ? ':' + proxyPort : ''}`);
+	        const agentOptions = {
+	          protocol: proxyURL.protocol,
+	          hostname: proxyURL.hostname.replace(/^\[|\]$/g, ''),
+	          port: proxyURL.port,
+	          auth: proxyAuth && typeof proxyAuth === 'string' ? proxyAuth : undefined
+	        };
+	        if (proxyURL.protocol === 'https:') {
+	          agentOptions.ALPNProtocols = ['http/1.1'];
+	        }
+	        const tunnelingAgent = getTunnelingAgent(agentOptions, configHttpsAgent);
+	        // Set both: `options.agent` is consumed by the native https.request path
+	        // (config.maxRedirects === 0); `options.agents.https` is consumed by
+	        // follow-redirects, which ignores `options.agent` when `options.agents`
+	        // is present.
+	        options.agent = tunnelingAgent;
+	        if (options.agents) {
+	          options.agents.https = tunnelingAgent;
+	        }
+	      }
+	    } else {
+	      // Forward-proxy mode for plaintext HTTP targets. The request line carries
+	      // the absolute URL and the proxy sees everything — acceptable for plain
+	      // HTTP since the wire was already plaintext.
+	      if (proxyAuth) {
+	        const base64 = Buffer.from(proxyAuth, 'utf8').toString('base64');
+	        options.headers['Proxy-Authorization'] = 'Basic ' + base64;
+	      }
+
+	      // Preserve a user-supplied Host header (case-insensitive) so callers can override
+	      // the value forwarded to the proxy; otherwise default to the request URL's host.
+	      let hasUserHostHeader = false;
+	      for (const name of Object.keys(options.headers)) {
+	        if (name.toLowerCase() === 'host') {
+	          hasUserHostHeader = true;
+	          break;
+	        }
+	      }
+	      if (!hasUserHostHeader) {
+	        options.headers.host = options.hostname + (options.port ? ':' + options.port : '');
+	      }
+	      const proxyHost = readProxyField('hostname') || readProxyField('host');
+	      options.hostname = proxyHost;
+	      // Replace 'host' since options is not a URL object
+	      options.host = proxyHost;
+	      options.port = readProxyField('port');
+	      options.path = location;
+	      const proxyProtocol = readProxyField('protocol');
+	      if (proxyProtocol) {
+	        options.protocol = proxyProtocol.includes(':') ? proxyProtocol : `${proxyProtocol}:`;
+	      }
 	    }
 	  }
 	  options.beforeRedirects.proxy = function beforeRedirect(redirectOptions) {
 	    // Configure proxy for redirected request, passing the original config proxy to apply
 	    // the exact same logic as if the redirected request was performed by axios directly.
-	    setProxy(redirectOptions, configProxy, redirectOptions.href);
+	    setProxy(redirectOptions, configProxy, redirectOptions.href, true, configHttpsAgent);
 	  };
 	}
 	const isHttpAdapterSupported = typeof process !== 'undefined' && utils$1.kindOf(process) === 'process';
@@ -32666,21 +34310,21 @@ function requireAxios$1 () {
 	/*eslint consistent-return:0*/
 	var httpAdapter = isHttpAdapterSupported && function httpAdapter(config) {
 	  return wrapAsync(async function dispatchHttpRequest(resolve, reject, onDone) {
-	    let {
-	      data,
-	      lookup,
-	      family,
-	      httpVersion = 1,
-	      http2Options
-	    } = config;
-	    const {
-	      responseType,
-	      responseEncoding
-	    } = config;
+	    const own = key => utils$1.hasOwnProp(config, key) ? config[key] : undefined;
+	    const transitional = own('transitional') || transitionalDefaults;
+	    let data = own('data');
+	    let lookup = own('lookup');
+	    let family = own('family');
+	    let httpVersion = own('httpVersion');
+	    if (httpVersion === undefined) httpVersion = 1;
+	    let http2Options = own('http2Options');
+	    const responseType = own('responseType');
+	    const responseEncoding = own('responseEncoding');
 	    const method = config.method.toUpperCase();
 	    let isDone;
 	    let rejected = false;
 	    let req;
+	    let connectPhaseTimer;
 	    httpVersion = +httpVersion;
 	    if (Number.isNaN(httpVersion)) {
 	      throw TypeError(`Invalid protocol version: '${config.httpVersion}' is not a number`);
@@ -32707,11 +34351,25 @@ function requireAxios$1 () {
 	      try {
 	        abortEmitter.emit('abort', !reason || reason.type ? new CanceledError(null, config, req) : reason);
 	      } catch (err) {
-	        console.warn('emit error', err);
+	        // ignore emit errors
 	      }
+	    }
+	    function clearConnectPhaseTimer() {
+	      if (connectPhaseTimer) {
+	        clearTimeout(connectPhaseTimer);
+	        connectPhaseTimer = null;
+	      }
+	    }
+	    function createTimeoutError() {
+	      let timeoutErrorMessage = config.timeout ? 'timeout of ' + config.timeout + 'ms exceeded' : 'timeout exceeded';
+	      if (config.timeoutErrorMessage) {
+	        timeoutErrorMessage = config.timeoutErrorMessage;
+	      }
+	      return new AxiosError(timeoutErrorMessage, transitional.clarifyTimeoutError ? AxiosError.ETIMEDOUT : AxiosError.ECONNABORTED, config, req);
 	    }
 	    abortEmitter.once('abort', reject);
 	    const onFinished = () => {
+	      clearConnectPhaseTimer();
 	      if (config.cancelToken) {
 	        config.cancelToken.unsubscribe(abort);
 	      }
@@ -32728,6 +34386,7 @@ function requireAxios$1 () {
 	    }
 	    onDone((response, isRejected) => {
 	      isDone = true;
+	      clearConnectPhaseTimer();
 	      if (isRejected) {
 	        rejected = true;
 	        onFinished();
@@ -32820,8 +34479,8 @@ function requireAxios$1 () {
 	        boundary: userBoundary && userBoundary[1] || undefined
 	      });
 	      // support for https://www.npmjs.com/package/form-data api
-	    } else if (utils$1.isFormData(data) && utils$1.isFunction(data.getHeaders)) {
-	      headers.set(data.getHeaders());
+	    } else if (utils$1.isFormData(data) && utils$1.isFunction(data.getHeaders) && data.getHeaders !== Object.prototype.getHeaders) {
+	      setFormDataHeaders$1(headers, data.getHeaders(), own('formDataHeaderPolicy'));
 	      if (!headers.hasContentLength()) {
 	        try {
 	          const knownLength = await util.promisify(data.getLength).call(data);
@@ -32869,20 +34528,21 @@ function requireAxios$1 () {
 
 	    // HTTP basic authentication
 	    let auth = undefined;
-	    if (config.auth) {
-	      const username = config.auth.username || '';
-	      const password = config.auth.password || '';
+	    const configAuth = own('auth');
+	    if (configAuth) {
+	      const username = configAuth.username || '';
+	      const password = configAuth.password || '';
 	      auth = username + ':' + password;
 	    }
-	    if (!auth && parsed.username) {
-	      const urlUsername = parsed.username;
-	      const urlPassword = parsed.password;
+	    if (!auth && (parsed.username || parsed.password)) {
+	      const urlUsername = decodeURIComponentSafe$1(parsed.username);
+	      const urlPassword = decodeURIComponentSafe$1(parsed.password);
 	      auth = urlUsername + ':' + urlPassword;
 	    }
 	    auth && headers.delete('authorization');
-	    let path;
+	    let path$1;
 	    try {
-	      path = buildURL(parsed.pathname + parsed.search, config.params, config.paramsSerializer).replace(/^\?/, '');
+	      path$1 = buildURL(parsed.pathname + parsed.search, config.params, config.paramsSerializer).replace(/^\?/, '');
 	    } catch (err) {
 	      const customErr = new Error(err.message);
 	      customErr.config = config;
@@ -32890,11 +34550,14 @@ function requireAxios$1 () {
 	      customErr.exists = true;
 	      return reject(customErr);
 	    }
-	    headers.set('Accept-Encoding', 'gzip, compress, deflate' + (isBrotliSupported ? ', br' : ''), false);
-	    const options = {
-	      path,
+	    headers.set('Accept-Encoding', utils$1.hasOwnProp(transitional, 'advertiseZstdAcceptEncoding') && transitional.advertiseZstdAcceptEncoding === true ? ACCEPT_ENCODING_WITH_ZSTD : ACCEPT_ENCODING, false);
+
+	    // Null-prototype to block prototype pollution gadgets on properties read
+	    // directly by Node's http.request (e.g. insecureHTTPParser, lookup).
+	    const options = Object.assign(Object.create(null), {
+	      path: path$1,
 	      method: method,
-	      headers: headers.toJSON(),
+	      headers: toByteStringHeaderObject(headers),
 	      agents: {
 	        http: config.httpAgent,
 	        https: config.httpsAgent
@@ -32903,35 +34566,73 @@ function requireAxios$1 () {
 	      protocol,
 	      family,
 	      beforeRedirect: dispatchBeforeRedirect,
-	      beforeRedirects: {},
+	      beforeRedirects: Object.create(null),
 	      http2Options
-	    };
+	    });
 
 	    // cacheable-lookup integration hotfix
 	    !utils$1.isUndefined(lookup) && (options.lookup = lookup);
-	    if (config.socketPath) {
-	      options.socketPath = config.socketPath;
+	    const socketPath = own('socketPath');
+	    if (socketPath) {
+	      if (typeof socketPath !== 'string') {
+	        return reject(new AxiosError('socketPath must be a string', AxiosError.ERR_BAD_OPTION_VALUE, config));
+	      }
+	      const allowedSocketPaths = own('allowedSocketPaths');
+	      if (allowedSocketPaths != null) {
+	        const allowed = Array.isArray(allowedSocketPaths) ? allowedSocketPaths : [allowedSocketPaths];
+	        const resolvedSocket = path.resolve(socketPath);
+	        const isAllowed = allowed.some(entry => typeof entry === 'string' && path.resolve(entry) === resolvedSocket);
+	        if (!isAllowed) {
+	          return reject(new AxiosError(`socketPath "${socketPath}" is not permitted by allowedSocketPaths`, AxiosError.ERR_BAD_OPTION_VALUE, config));
+	        }
+	      }
+	      options.socketPath = socketPath;
 	    } else {
 	      options.hostname = parsed.hostname.startsWith('[') ? parsed.hostname.slice(1, -1) : parsed.hostname;
 	      options.port = parsed.port;
-	      setProxy(options, config.proxy, protocol + '//' + parsed.hostname + (parsed.port ? ':' + parsed.port : '') + options.path);
+	      setProxy(options, config.proxy, protocol + '//' + parsed.hostname + (parsed.port ? ':' + parsed.port : '') + options.path, false, config.httpsAgent);
 	    }
 	    let transport;
+	    let isNativeTransport = false;
 	    const isHttpsRequest = isHttps.test(options.protocol);
-	    options.agent = isHttpsRequest ? config.httpsAgent : config.httpAgent;
+	    // Don't clobber a CONNECT-tunneling agent installed by setProxy() for an
+	    // HTTPS target.
+	    if (options.agent == null) {
+	      options.agent = isHttpsRequest ? config.httpsAgent : config.httpAgent;
+	    }
 	    if (isHttp2) {
 	      transport = http2Transport;
 	    } else {
-	      if (config.transport) {
-	        transport = config.transport;
+	      const configTransport = own('transport');
+	      if (configTransport) {
+	        transport = configTransport;
 	      } else if (config.maxRedirects === 0) {
 	        transport = isHttpsRequest ? https : http;
+	        isNativeTransport = true;
 	      } else {
 	        if (config.maxRedirects) {
 	          options.maxRedirects = config.maxRedirects;
 	        }
-	        if (config.beforeRedirect) {
-	          options.beforeRedirects.config = config.beforeRedirect;
+	        const configBeforeRedirect = own('beforeRedirect');
+	        if (configBeforeRedirect) {
+	          options.beforeRedirects.config = configBeforeRedirect;
+	        }
+	        if (auth) {
+	          // Restore HTTP Basic credentials on same-origin redirects only.
+	          // follow-redirects >= 1.15.8 strips Authorization on every redirect (see #6929);
+	          // cross-origin stripping is the documented mitigation for T-R2 in THREATMODEL.md
+	          // and is preserved by deliberately not restoring on origin change.
+	          const requestOrigin = parsed.origin;
+	          const authToRestore = auth;
+	          options.beforeRedirects.auth = function beforeRedirectAuth(redirectOptions) {
+	            try {
+	              if (new URL(redirectOptions.href).origin === requestOrigin) {
+	                redirectOptions.auth = authToRestore;
+	              }
+	            } catch (e) {
+	              // ignore malformed URL: leaving auth stripped is fail-safe
+	            }
+	          };
 	        }
 	        transport = isHttpsRequest ? httpsFollow : httpFollow;
 	      }
@@ -32942,12 +34643,15 @@ function requireAxios$1 () {
 	      // follow-redirects does not skip comparison, so it should always succeed for axios -1 unlimited
 	      options.maxBodyLength = Infinity;
 	    }
-	    if (config.insecureHTTPParser) {
-	      options.insecureHTTPParser = config.insecureHTTPParser;
-	    }
+
+	    // Always set an explicit own value so a polluted
+	    // Object.prototype.insecureHTTPParser cannot enable the lenient parser
+	    // through Node's internal options copy
+	    options.insecureHTTPParser = Boolean(own('insecureHTTPParser'));
 
 	    // Create the request
 	    req = transport.request(options, function handleResponse(res) {
+	      clearConnectPhaseTimer();
 	      if (req.destroyed) return;
 	      const streams = [res];
 	      const responseLength = utils$1.toFiniteNumber(res.headers['content-length']);
@@ -32998,6 +34702,13 @@ function requireAxios$1 () {
 	              streams.push(zlib.createBrotliDecompress(brotliOptions));
 	              delete res.headers['content-encoding'];
 	            }
+	            break;
+	          case 'zstd':
+	            if (isZstdSupported) {
+	              streams.push(zlib.createZstdDecompress(zstdOptions));
+	              delete res.headers['content-encoding'];
+	            }
+	            break;
 	        }
 	      }
 	      responseStream = streams.length > 1 ? stream.pipeline(streams, utils$1.noop) : streams[0];
@@ -33009,6 +34720,25 @@ function requireAxios$1 () {
 	        request: lastRequest
 	      };
 	      if (responseType === 'stream') {
+	        // Enforce maxContentLength on streamed responses; previously this
+	        // was applied only to buffered responses.
+	        if (config.maxContentLength > -1) {
+	          const limit = config.maxContentLength;
+	          const source = responseStream;
+	          async function* enforceMaxContentLength() {
+	            let totalResponseBytes = 0;
+	            for await (const chunk of source) {
+	              totalResponseBytes += chunk.length;
+	              if (totalResponseBytes > limit) {
+	                throw new AxiosError('maxContentLength size of ' + limit + ' exceeded', AxiosError.ERR_BAD_RESPONSE, config, lastRequest);
+	              }
+	              yield chunk;
+	            }
+	          }
+	          responseStream = stream.Readable.from(enforceMaxContentLength(), {
+	            objectMode: false
+	          });
+	        }
 	        response.data = responseStream;
 	        settle(resolve, reject, response);
 	      } else {
@@ -33030,13 +34760,13 @@ function requireAxios$1 () {
 	          if (rejected) {
 	            return;
 	          }
-	          const err = new AxiosError('stream has been aborted', AxiosError.ERR_BAD_RESPONSE, config, lastRequest);
+	          const err = new AxiosError('stream has been aborted', AxiosError.ERR_BAD_RESPONSE, config, lastRequest, response);
 	          responseStream.destroy(err);
 	          reject(err);
 	        });
 	        responseStream.on('error', function handleStreamError(err) {
-	          if (req.destroyed) return;
-	          reject(AxiosError.from(err, null, config, lastRequest));
+	          if (rejected) return;
+	          reject(AxiosError.from(err, null, config, lastRequest, response));
 	        });
 	        responseStream.on('end', function handleStreamEnd() {
 	          try {
@@ -33075,9 +34805,44 @@ function requireAxios$1 () {
 	    });
 
 	    // set tcp keep alive to prevent drop connection by peer
+	    // Track every socket bound to this outer RedirectableRequest so a single
+	    // 'close' listener can release ownership on all of them. follow-redirects
+	    // re-emits the 'socket' event for each hop's native request onto the same
+	    // outer request, so attaching per-request listeners inside this handler
+	    // would accumulate across hops and trigger MaxListenersExceededWarning at
+	    // >= 11 redirects. Clearing only the last-bound socket would leave stale
+	    // kAxiosCurrentReq refs on earlier hop sockets returned to the keep-alive
+	    // pool, causing an idle-pool 'error' to be attributed to a closed req.
+	    const boundSockets = new Set();
 	    req.on('socket', function handleRequestSocket(socket) {
 	      // default interval of sending ack packet is 1 minute
 	      socket.setKeepAlive(true, 1000 * 60);
+
+	      // Install a single 'error' listener per socket (not per request) to avoid
+	      // accumulating listeners on pooled keep-alive sockets that get reassigned
+	      // to new requests before the previous request's 'close' fires (issue #10780).
+	      // The listener is bound to the socket's currently-active request via a
+	      // symbol, which is swapped as the socket is reassigned.
+	      if (!socket[kAxiosSocketListener]) {
+	        socket.on('error', function handleSocketError(err) {
+	          const current = socket[kAxiosCurrentReq];
+	          if (current && !current.destroyed) {
+	            current.destroy(err);
+	          }
+	        });
+	        socket[kAxiosSocketListener] = true;
+	      }
+	      socket[kAxiosCurrentReq] = req;
+	      boundSockets.add(socket);
+	    });
+	    req.once('close', function clearCurrentReq() {
+	      clearConnectPhaseTimer();
+	      for (const socket of boundSockets) {
+	        if (socket[kAxiosCurrentReq] === req) {
+	          socket[kAxiosCurrentReq] = null;
+	        }
+	      }
+	      boundSockets.clear();
 	    });
 
 	    // Handle request timeout
@@ -33088,21 +34853,23 @@ function requireAxios$1 () {
 	        abort(new AxiosError('error trying to parse `config.timeout` to int', AxiosError.ERR_BAD_OPTION_VALUE, config, req));
 	        return;
 	      }
+	      const handleTimeout = function handleTimeout() {
+	        if (isDone) return;
+	        abort(createTimeoutError());
+	      };
+	      if (isNativeTransport && timeout > 0) {
+	        // Native ClientRequest#setTimeout starts from the socket lifecycle and
+	        // may not fire while TCP connect is still pending. Mirror the
+	        // follow-redirects wall-clock timer for the maxRedirects === 0 path.
+	        connectPhaseTimer = setTimeout(handleTimeout, timeout);
+	      }
 
 	      // Sometime, the response will be very slow, and does not respond, the connect event will be block by event loop system.
 	      // And timer callback will be fired, and abort() will be invoked before connection, then get "socket hang up" and code ECONNRESET.
 	      // At this time, if we have a large number of request, nodejs will hang up some socket on background. and the number will up and up.
 	      // And then these socket which be hang up will devouring CPU little by little.
 	      // ClientRequest.setTimeout will be fired on the specify milliseconds, and can make sure that abort() will be fired after connect.
-	      req.setTimeout(timeout, function handleRequestTimeout() {
-	        if (isDone) return;
-	        let timeoutErrorMessage = config.timeout ? 'timeout of ' + config.timeout + 'ms exceeded' : 'timeout exceeded';
-	        const transitional = config.transitional || transitionalDefaults;
-	        if (config.timeoutErrorMessage) {
-	          timeoutErrorMessage = config.timeoutErrorMessage;
-	        }
-	        abort(new AxiosError(timeoutErrorMessage, transitional.clarifyTimeoutError ? AxiosError.ETIMEDOUT : AxiosError.ECONNABORTED, config, req));
-	      });
+	      req.setTimeout(timeout, handleTimeout);
 	    } else {
 	      // explicitly reset the socket timeout value for a possible `keep-alive` request
 	      req.setTimeout(0);
@@ -33124,7 +34891,28 @@ function requireAxios$1 () {
 	          abort(new CanceledError('Request stream has been aborted', config, req));
 	        }
 	      });
-	      data.pipe(req);
+
+	      // Enforce maxBodyLength for streamed uploads on the native http/https
+	      // transport (maxRedirects === 0); follow-redirects enforces it on the
+	      // other path.
+	      let uploadStream = data;
+	      if (config.maxBodyLength > -1 && config.maxRedirects === 0) {
+	        const limit = config.maxBodyLength;
+	        let bytesSent = 0;
+	        uploadStream = stream.pipeline([data, new stream.Transform({
+	          transform(chunk, _enc, cb) {
+	            bytesSent += chunk.length;
+	            if (bytesSent > limit) {
+	              return cb(new AxiosError('Request body larger than maxBodyLength limit', AxiosError.ERR_BAD_REQUEST, config, req));
+	            }
+	            cb(null, chunk);
+	          }
+	        })], utils$1.noop);
+	        uploadStream.on('error', err => {
+	          if (!req.destroyed) req.destroy(err);
+	        });
+	      }
+	      uploadStream.pipe(req);
 	    } else {
 	      data && req.write(data);
 	      req.end();
@@ -33162,8 +34950,20 @@ function requireAxios$1 () {
 	  },
 	  read(name) {
 	    if (typeof document === 'undefined') return null;
-	    const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
-	    return match ? decodeURIComponent(match[1]) : null;
+	    // Match name=value by splitting on the semicolon separator instead of building a
+	    // RegExp from `name` — interpolating an unescaped string into a RegExp would let
+	    // metacharacters (e.g. `.+?` in an attacker-influenced cookie name) cause ReDoS or
+	    // match the wrong cookie. Browsers may serialize cookie pairs as either ";" or
+	    // "; ", so ignore optional whitespace before each cookie name.
+	    const cookies = document.cookie.split(';');
+	    for (let i = 0; i < cookies.length; i++) {
+	      const cookie = cookies[i].replace(/^\s+/, '');
+	      const eq = cookie.indexOf('=');
+	      if (eq !== -1 && cookie.slice(0, eq) === name) {
+	        return decodeURIComponent(cookie.slice(eq + 1));
+	      }
+	    }
+	    return null;
 	  },
 	  remove(name) {
 	    this.write(name, '', Date.now() - 86400000, '/');
@@ -33194,7 +34994,21 @@ function requireAxios$1 () {
 	function mergeConfig(config1, config2) {
 	  // eslint-disable-next-line no-param-reassign
 	  config2 = config2 || {};
-	  const config = {};
+
+	  // Use a null-prototype object so that downstream reads such as `config.auth`
+	  // or `config.baseURL` cannot inherit polluted values from Object.prototype.
+	  // `hasOwnProperty` is restored as a non-enumerable own slot to preserve
+	  // ergonomics for user code that relies on it.
+	  const config = Object.create(null);
+	  Object.defineProperty(config, 'hasOwnProperty', {
+	    // Null-proto descriptor so a polluted Object.prototype.get cannot turn
+	    // this data descriptor into an accessor descriptor on the way in.
+	    __proto__: null,
+	    value: Object.prototype.hasOwnProperty,
+	    enumerable: false,
+	    writable: true,
+	    configurable: true
+	  });
 	  function getMergedValue(target, source, prop, caseless) {
 	    if (utils$1.isPlainObject(target) && utils$1.isPlainObject(source)) {
 	      return utils$1.merge.call({
@@ -33233,9 +35047,9 @@ function requireAxios$1 () {
 
 	  // eslint-disable-next-line consistent-return
 	  function mergeDirectKeys(a, b, prop) {
-	    if (prop in config2) {
+	    if (utils$1.hasOwnProp(config2, prop)) {
 	      return getMergedValue(a, b);
-	    } else if (prop in config1) {
+	    } else if (utils$1.hasOwnProp(config1, prop)) {
 	      return getMergedValue(undefined, a);
 	    }
 	  }
@@ -33266,6 +35080,7 @@ function requireAxios$1 () {
 	    httpsAgent: defaultToConfig2,
 	    cancelToken: defaultToConfig2,
 	    socketPath: defaultToConfig2,
+	    allowedSocketPaths: defaultToConfig2,
 	    responseEncoding: defaultToConfig2,
 	    validateStatus: mergeDirectKeys,
 	    headers: (a, b, prop) => mergeDeepProperties(headersToObject(a), headersToObject(b), prop, true)
@@ -33276,42 +35091,64 @@ function requireAxios$1 () {
 	  }), function computeConfigValue(prop) {
 	    if (prop === '__proto__' || prop === 'constructor' || prop === 'prototype') return;
 	    const merge = utils$1.hasOwnProp(mergeMap, prop) ? mergeMap[prop] : mergeDeepProperties;
-	    const configValue = merge(config1[prop], config2[prop], prop);
+	    const a = utils$1.hasOwnProp(config1, prop) ? config1[prop] : undefined;
+	    const b = utils$1.hasOwnProp(config2, prop) ? config2[prop] : undefined;
+	    const configValue = merge(a, b, prop);
 	    utils$1.isUndefined(configValue) && merge !== mergeDirectKeys || (config[prop] = configValue);
 	  });
 	  return config;
 	}
 
-	var resolveConfig = config => {
+	const FORM_DATA_CONTENT_HEADERS = ['content-type', 'content-length'];
+	function setFormDataHeaders(headers, formHeaders, policy) {
+	  if (policy !== 'content-only') {
+	    headers.set(formHeaders);
+	    return;
+	  }
+	  Object.entries(formHeaders).forEach(([key, val]) => {
+	    if (FORM_DATA_CONTENT_HEADERS.includes(key.toLowerCase())) {
+	      headers.set(key, val);
+	    }
+	  });
+	}
+
+	/**
+	 * Encode a UTF-8 string to a Latin-1 byte string for use with btoa().
+	 * This is a modern replacement for the deprecated unescape(encodeURIComponent(str)) pattern.
+	 *
+	 * @param {string} str The string to encode
+	 *
+	 * @returns {string} UTF-8 bytes as a Latin-1 string
+	 */
+	const encodeUTF8$1 = str => encodeURIComponent(str).replace(/%([0-9A-F]{2})/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+	function resolveConfig(config) {
 	  const newConfig = mergeConfig({}, config);
-	  let {
-	    data,
-	    withXSRFToken,
-	    xsrfHeaderName,
-	    xsrfCookieName,
-	    headers,
-	    auth
-	  } = newConfig;
+
+	  // Read only own properties to prevent prototype pollution gadgets
+	  // (e.g. Object.prototype.baseURL = 'https://evil.com').
+	  const own = key => utils$1.hasOwnProp(newConfig, key) ? newConfig[key] : undefined;
+	  const data = own('data');
+	  let withXSRFToken = own('withXSRFToken');
+	  const xsrfHeaderName = own('xsrfHeaderName');
+	  const xsrfCookieName = own('xsrfCookieName');
+	  let headers = own('headers');
+	  const auth = own('auth');
+	  const baseURL = own('baseURL');
+	  const allowAbsoluteUrls = own('allowAbsoluteUrls');
+	  const url = own('url');
 	  newConfig.headers = headers = AxiosHeaders.from(headers);
-	  newConfig.url = buildURL(buildFullPath(newConfig.baseURL, newConfig.url, newConfig.allowAbsoluteUrls), config.params, config.paramsSerializer);
+	  newConfig.url = buildURL(buildFullPath(baseURL, url, allowAbsoluteUrls), own('params'), own('paramsSerializer'));
 
 	  // HTTP basic authentication
 	  if (auth) {
-	    headers.set('Authorization', 'Basic ' + btoa((auth.username || '') + ':' + (auth.password ? unescape(encodeURIComponent(auth.password)) : '')));
+	    headers.set('Authorization', 'Basic ' + btoa((auth.username || '') + ':' + (auth.password ? encodeUTF8$1(auth.password) : '')));
 	  }
 	  if (utils$1.isFormData(data)) {
-	    if (platform.hasStandardBrowserEnv || platform.hasStandardBrowserWebWorkerEnv) {
-	      headers.setContentType(undefined); // browser handles it
+	    if (platform.hasStandardBrowserEnv || platform.hasStandardBrowserWebWorkerEnv || utils$1.isReactNative(data)) {
+	      headers.setContentType(undefined); // browser/web worker/RN handles it
 	    } else if (utils$1.isFunction(data.getHeaders)) {
 	      // Node.js FormData (like form-data package)
-	      const formHeaders = data.getHeaders();
-	      // Only set safe headers to avoid overwriting security headers
-	      const allowedHeaders = ['content-type', 'content-length'];
-	      Object.entries(formHeaders).forEach(([key, val]) => {
-	        if (allowedHeaders.includes(key.toLowerCase())) {
-	          headers.set(key, val);
-	        }
-	      });
+	      setFormDataHeaders(headers, data.getHeaders(), own('formDataHeaderPolicy'));
 	    }
 	  }
 
@@ -33320,9 +35157,15 @@ function requireAxios$1 () {
 	  // Specifically not if we're in a web worker, or react-native.
 
 	  if (platform.hasStandardBrowserEnv) {
-	    withXSRFToken && utils$1.isFunction(withXSRFToken) && (withXSRFToken = withXSRFToken(newConfig));
-	    if (withXSRFToken || withXSRFToken !== false && isURLSameOrigin(newConfig.url)) {
-	      // Add xsrf header
+	    if (utils$1.isFunction(withXSRFToken)) {
+	      withXSRFToken = withXSRFToken(newConfig);
+	    }
+
+	    // Strict boolean check — prevents proto-pollution gadgets (e.g. Object.prototype.withXSRFToken = 1)
+	    // and misconfigurations (e.g. "false") from short-circuiting the same-origin check and leaking
+	    // the XSRF token cross-origin.
+	    const shouldSendXSRF = withXSRFToken === true || withXSRFToken == null && isURLSameOrigin(newConfig.url);
+	    if (shouldSendXSRF) {
 	      const xsrfValue = xsrfHeaderName && xsrfCookieName && cookies.read(xsrfCookieName);
 	      if (xsrfValue) {
 	        headers.set(xsrfHeaderName, xsrfValue);
@@ -33330,7 +35173,7 @@ function requireAxios$1 () {
 	    }
 	  }
 	  return newConfig;
-	};
+	}
 
 	const isXHRAdapterSupported = typeof XMLHttpRequest !== 'undefined';
 	var xhrAdapter = isXHRAdapterSupported && function (config) {
@@ -33398,7 +35241,7 @@ function requireAxios$1 () {
 	        // handled by onerror instead
 	        // With one exception: request that using file: protocol, most browsers
 	        // will return status as 0 even though it's a successful request
-	        if (request.status === 0 && !(request.responseURL && request.responseURL.indexOf('file:') === 0)) {
+	        if (request.status === 0 && !(request.responseURL && request.responseURL.startsWith('file:'))) {
 	          return;
 	        }
 	        // readystate handler is calling before onerror or ontimeout handlers,
@@ -33413,6 +35256,7 @@ function requireAxios$1 () {
 	        return;
 	      }
 	      reject(new AxiosError('Request aborted', AxiosError.ECONNABORTED, config, request));
+	      done();
 
 	      // Clean up request
 	      request = null;
@@ -33428,6 +35272,7 @@ function requireAxios$1 () {
 	      // attach the underlying event for consumers who want details
 	      err.event = event || null;
 	      reject(err);
+	      done();
 	      request = null;
 	    };
 
@@ -33439,6 +35284,7 @@ function requireAxios$1 () {
 	        timeoutErrorMessage = _config.timeoutErrorMessage;
 	      }
 	      reject(new AxiosError(timeoutErrorMessage, transitional.clarifyTimeoutError ? AxiosError.ETIMEDOUT : AxiosError.ECONNABORTED, config, request));
+	      done();
 
 	      // Clean up request
 	      request = null;
@@ -33449,7 +35295,7 @@ function requireAxios$1 () {
 
 	    // Add headers to the request
 	    if ('setRequestHeader' in request) {
-	      utils$1.forEach(requestHeaders.toJSON(), function setRequestHeader(val, key) {
+	      utils$1.forEach(toByteStringHeaderObject(requestHeaders), function setRequestHeader(val, key) {
 	        request.setRequestHeader(key, val);
 	      });
 	    }
@@ -33485,6 +35331,7 @@ function requireAxios$1 () {
 	        }
 	        reject(!cancel || cancel.type ? new CanceledError(null, config, request) : cancel);
 	        request.abort();
+	        done();
 	        request = null;
 	      };
 	      _config.cancelToken && _config.cancelToken.subscribe(onCanceled);
@@ -33493,7 +35340,7 @@ function requireAxios$1 () {
 	      }
 	    }
 	    const protocol = parseProtocol(_config.url);
-	    if (protocol && platform.protocols.indexOf(protocol) === -1) {
+	    if (protocol && !platform.protocols.includes(protocol)) {
 	      reject(new AxiosError('Unsupported protocol ' + protocol + ':', AxiosError.ERR_BAD_REQUEST, config));
 	      return;
 	    }
@@ -33504,41 +35351,41 @@ function requireAxios$1 () {
 	};
 
 	const composeSignals = (signals, timeout) => {
-	  const {
-	    length
-	  } = signals = signals ? signals.filter(Boolean) : [];
-	  if (timeout || length) {
-	    let controller = new AbortController();
-	    let aborted;
-	    const onabort = function (reason) {
-	      if (!aborted) {
-	        aborted = true;
-	        unsubscribe();
-	        const err = reason instanceof Error ? reason : this.reason;
-	        controller.abort(err instanceof AxiosError ? err : new CanceledError(err instanceof Error ? err.message : err));
-	      }
-	    };
-	    let timer = timeout && setTimeout(() => {
-	      timer = null;
-	      onabort(new AxiosError(`timeout of ${timeout}ms exceeded`, AxiosError.ETIMEDOUT));
-	    }, timeout);
-	    const unsubscribe = () => {
-	      if (signals) {
-	        timer && clearTimeout(timer);
-	        timer = null;
-	        signals.forEach(signal => {
-	          signal.unsubscribe ? signal.unsubscribe(onabort) : signal.removeEventListener('abort', onabort);
-	        });
-	        signals = null;
-	      }
-	    };
-	    signals.forEach(signal => signal.addEventListener('abort', onabort));
-	    const {
-	      signal
-	    } = controller;
-	    signal.unsubscribe = () => utils$1.asap(unsubscribe);
-	    return signal;
+	  signals = signals ? signals.filter(Boolean) : [];
+	  if (!timeout && !signals.length) {
+	    return;
 	  }
+	  const controller = new AbortController();
+	  let aborted = false;
+	  const onabort = function (reason) {
+	    if (!aborted) {
+	      aborted = true;
+	      unsubscribe();
+	      const err = reason instanceof Error ? reason : this.reason;
+	      controller.abort(err instanceof AxiosError ? err : new CanceledError(err instanceof Error ? err.message : err));
+	    }
+	  };
+	  let timer = timeout && setTimeout(() => {
+	    timer = null;
+	    onabort(new AxiosError(`timeout of ${timeout}ms exceeded`, AxiosError.ETIMEDOUT));
+	  }, timeout);
+	  const unsubscribe = () => {
+	    if (!signals) {
+	      return;
+	    }
+	    timer && clearTimeout(timer);
+	    timer = null;
+	    signals.forEach(signal => {
+	      signal.unsubscribe ? signal.unsubscribe(onabort) : signal.removeEventListener('abort', onabort);
+	    });
+	    signals = null;
+	  };
+	  signals.forEach(signal => signal.addEventListener('abort', onabort));
+	  const {
+	    signal
+	  } = controller;
+	  signal.unsubscribe = () => utils$1.asap(unsubscribe);
+	  return signal;
 	};
 
 	const streamChunk = function* (chunk, chunkSize) {
@@ -33627,17 +35474,31 @@ function requireAxios$1 () {
 	const {
 	  isFunction
 	} = utils$1;
-	const globalFetchAPI = (({
-	  Request,
-	  Response
-	}) => ({
-	  Request,
-	  Response
-	}))(utils$1.global);
-	const {
-	  ReadableStream: ReadableStream$1,
-	  TextEncoder: TextEncoder$1
-	} = utils$1.global;
+
+	/**
+	 * Encode a UTF-8 string to a Latin-1 byte string for use with btoa().
+	 * This is a modern replacement for the deprecated unescape(encodeURIComponent(str)) pattern.
+	 *
+	 * @param {string} str The string to encode
+	 *
+	 * @returns {string} UTF-8 bytes as a Latin-1 string
+	 */
+	const encodeUTF8 = str => encodeURIComponent(str).replace(/%([0-9A-F]{2})/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+
+	// Node's WHATWG URL parser returns `username` and `password` percent-encoded.
+	// Decode before composing the `auth` option so credentials such as
+	// `my%40email.com:pass` are sent as `my@email.com:pass`. Falls back to the
+	// original value for malformed input so a bad encoding never throws.
+	const decodeURIComponentSafe = value => {
+	  if (!utils$1.isString(value)) {
+	    return value;
+	  }
+	  try {
+	    return decodeURIComponent(value);
+	  } catch (error) {
+	    return value;
+	  }
+	};
 	const test = (fn, ...args) => {
 	  try {
 	    return !!fn(...args);
@@ -33645,10 +35506,26 @@ function requireAxios$1 () {
 	    return false;
 	  }
 	};
+	const maybeWithAuthCredentials = url => {
+	  const protocolIndex = url.indexOf('://');
+	  let urlToCheck = url;
+	  if (protocolIndex !== -1) {
+	    urlToCheck = urlToCheck.slice(protocolIndex + 3);
+	  }
+	  return urlToCheck.includes('@') || urlToCheck.includes(':');
+	};
 	const factory = env => {
+	  const globalObject = utils$1.global !== undefined && utils$1.global !== null ? utils$1.global : globalThis;
+	  const {
+	    ReadableStream,
+	    TextEncoder
+	  } = globalObject;
 	  env = utils$1.merge.call({
 	    skipUndefined: true
-	  }, globalFetchAPI, env);
+	  }, {
+	    Request: globalObject.Request,
+	    Response: globalObject.Response
+	  }, env);
 	  const {
 	    fetch: envFetch,
 	    Request,
@@ -33660,20 +35537,22 @@ function requireAxios$1 () {
 	  if (!isFetchSupported) {
 	    return false;
 	  }
-	  const isReadableStreamSupported = isFetchSupported && isFunction(ReadableStream$1);
-	  const encodeText = isFetchSupported && (typeof TextEncoder$1 === 'function' ? (encoder => str => encoder.encode(str))(new TextEncoder$1()) : async str => new Uint8Array(await new Request(str).arrayBuffer()));
+	  const isReadableStreamSupported = isFetchSupported && isFunction(ReadableStream);
+	  const encodeText = isFetchSupported && (typeof TextEncoder === 'function' ? (encoder => str => encoder.encode(str))(new TextEncoder()) : async str => new Uint8Array(await new Request(str).arrayBuffer()));
 	  const supportsRequestStream = isRequestSupported && isReadableStreamSupported && test(() => {
 	    let duplexAccessed = false;
-	    const body = new ReadableStream$1();
-	    const hasContentType = new Request(platform.origin, {
-	      body,
+	    const request = new Request(platform.origin, {
+	      body: new ReadableStream(),
 	      method: 'POST',
 	      get duplex() {
 	        duplexAccessed = true;
 	        return 'half';
 	      }
-	    }).headers.has('Content-Type');
-	    body.cancel();
+	    });
+	    const hasContentType = request.headers.has('Content-Type');
+	    if (request.body != null) {
+	      request.body.cancel();
+	    }
 	    return duplexAccessed && !hasContentType;
 	  });
 	  const supportsResponseStream = isResponseSupported && isReadableStreamSupported && test(() => utils$1.isReadableStream(new Response('').body));
@@ -33732,8 +35611,13 @@ function requireAxios$1 () {
 	      responseType,
 	      headers,
 	      withCredentials = 'same-origin',
-	      fetchOptions
+	      fetchOptions,
+	      maxContentLength,
+	      maxBodyLength
 	    } = resolveConfig(config);
+	    const hasMaxContentLength = utils$1.isNumber(maxContentLength) && maxContentLength > -1;
+	    const hasMaxBodyLength = utils$1.isNumber(maxBodyLength) && maxBodyLength > -1;
+	    const own = key => utils$1.hasOwnProp(config, key) ? config[key] : undefined;
 	    let _fetch = envFetch || fetch;
 	    responseType = responseType ? (responseType + '').toLowerCase() : 'text';
 	    let composedSignal = composeSignals([signal, cancelToken && cancelToken.toAbortSignal()], timeout);
@@ -33743,6 +35627,58 @@ function requireAxios$1 () {
 	    });
 	    let requestContentLength;
 	    try {
+	      // HTTP basic authentication
+	      let auth = undefined;
+	      const configAuth = own('auth');
+	      if (configAuth) {
+	        const username = configAuth.username || '';
+	        const password = configAuth.password || '';
+	        auth = {
+	          username,
+	          password
+	        };
+	      }
+	      if (maybeWithAuthCredentials(url)) {
+	        const parsedURL = new URL(url, platform.origin);
+	        if (!auth && (parsedURL.username || parsedURL.password)) {
+	          const urlUsername = decodeURIComponentSafe(parsedURL.username);
+	          const urlPassword = decodeURIComponentSafe(parsedURL.password);
+	          auth = {
+	            username: urlUsername,
+	            password: urlPassword
+	          };
+	        }
+	        if (parsedURL.username || parsedURL.password) {
+	          parsedURL.username = '';
+	          parsedURL.password = '';
+	          url = parsedURL.href;
+	        }
+	      }
+	      if (auth) {
+	        headers.delete('authorization');
+	        headers.set('Authorization', 'Basic ' + btoa(encodeUTF8((auth.username || '') + ':' + (auth.password || ''))));
+	      }
+
+	      // Enforce maxContentLength for data: URLs up-front so we never materialize
+	      // an oversized payload. The HTTP adapter applies the same check (see http.js
+	      // "if (protocol === 'data:')" branch).
+	      if (hasMaxContentLength && typeof url === 'string' && url.startsWith('data:')) {
+	        const estimated = estimateDataURLDecodedBytes(url);
+	        if (estimated > maxContentLength) {
+	          throw new AxiosError('maxContentLength size of ' + maxContentLength + ' exceeded', AxiosError.ERR_BAD_RESPONSE, config, request);
+	        }
+	      }
+
+	      // Enforce maxBodyLength against the outbound request body before dispatch.
+	      // Mirrors http.js behavior (ERR_BAD_REQUEST / 'Request body larger than
+	      // maxBodyLength limit'). Skip when the body length cannot be determined
+	      // (e.g. a live ReadableStream supplied by the caller).
+	      if (hasMaxBodyLength && method !== 'get' && method !== 'head') {
+	        const outboundLength = await resolveBodyLength(headers, data);
+	        if (typeof outboundLength === 'number' && isFinite(outboundLength) && outboundLength > maxBodyLength) {
+	          throw new AxiosError('Request body larger than maxBodyLength limit', AxiosError.ERR_BAD_REQUEST, config, request);
+	        }
+	      }
 	      if (onUploadProgress && supportsRequestStream && method !== 'get' && method !== 'head' && (requestContentLength = await resolveBodyLength(headers, data)) !== 0) {
 	        let _request = new Request(url, {
 	          method: 'POST',
@@ -33765,32 +35701,82 @@ function requireAxios$1 () {
 	      // Cloudflare Workers throws when credentials are defined
 	      // see https://github.com/cloudflare/workerd/issues/902
 	      const isCredentialsSupported = isRequestSupported && 'credentials' in Request.prototype;
+
+	      // If data is FormData and Content-Type is multipart/form-data without boundary,
+	      // delete it so fetch can set it correctly with the boundary
+	      if (utils$1.isFormData(data)) {
+	        const contentType = headers.getContentType();
+	        if (contentType && /^multipart\/form-data/i.test(contentType) && !/boundary=/i.test(contentType)) {
+	          headers.delete('content-type');
+	        }
+	      }
+
+	      // Set User-Agent header if not already set (fetch defaults to 'node' in Node.js)
+	      headers.set('User-Agent', 'axios/' + VERSION, false);
 	      const resolvedOptions = {
 	        ...fetchOptions,
 	        signal: composedSignal,
 	        method: method.toUpperCase(),
-	        headers: headers.normalize().toJSON(),
+	        headers: toByteStringHeaderObject(headers.normalize()),
 	        body: data,
 	        duplex: 'half',
 	        credentials: isCredentialsSupported ? withCredentials : undefined
 	      };
 	      request = isRequestSupported && new Request(url, resolvedOptions);
 	      let response = await (isRequestSupported ? _fetch(request, fetchOptions) : _fetch(url, resolvedOptions));
+
+	      // Cheap pre-check: if the server honestly declares a content-length that
+	      // already exceeds the cap, reject before we start streaming.
+	      if (hasMaxContentLength) {
+	        const declaredLength = utils$1.toFiniteNumber(response.headers.get('content-length'));
+	        if (declaredLength != null && declaredLength > maxContentLength) {
+	          throw new AxiosError('maxContentLength size of ' + maxContentLength + ' exceeded', AxiosError.ERR_BAD_RESPONSE, config, request);
+	        }
+	      }
 	      const isStreamResponse = supportsResponseStream && (responseType === 'stream' || responseType === 'response');
-	      if (supportsResponseStream && (onDownloadProgress || isStreamResponse && unsubscribe)) {
+	      if (supportsResponseStream && response.body && (onDownloadProgress || hasMaxContentLength || isStreamResponse && unsubscribe)) {
 	        const options = {};
 	        ['status', 'statusText', 'headers'].forEach(prop => {
 	          options[prop] = response[prop];
 	        });
 	        const responseContentLength = utils$1.toFiniteNumber(response.headers.get('content-length'));
 	        const [onProgress, flush] = onDownloadProgress && progressEventDecorator(responseContentLength, progressEventReducer(asyncDecorator(onDownloadProgress), true)) || [];
-	        response = new Response(trackStream(response.body, DEFAULT_CHUNK_SIZE, onProgress, () => {
+	        let bytesRead = 0;
+	        const onChunkProgress = loadedBytes => {
+	          if (hasMaxContentLength) {
+	            bytesRead = loadedBytes;
+	            if (bytesRead > maxContentLength) {
+	              throw new AxiosError('maxContentLength size of ' + maxContentLength + ' exceeded', AxiosError.ERR_BAD_RESPONSE, config, request);
+	            }
+	          }
+	          onProgress && onProgress(loadedBytes);
+	        };
+	        response = new Response(trackStream(response.body, DEFAULT_CHUNK_SIZE, onChunkProgress, () => {
 	          flush && flush();
 	          unsubscribe && unsubscribe();
 	        }), options);
 	      }
 	      responseType = responseType || 'text';
 	      let responseData = await resolvers[utils$1.findKey(resolvers, responseType) || 'text'](response, config);
+
+	      // Fallback enforcement for environments without ReadableStream support
+	      // (legacy runtimes). Detect materialized size from typed output; skip
+	      // streams/Response passthrough since the user will read those themselves.
+	      if (hasMaxContentLength && !supportsResponseStream && !isStreamResponse) {
+	        let materializedSize;
+	        if (responseData != null) {
+	          if (typeof responseData.byteLength === 'number') {
+	            materializedSize = responseData.byteLength;
+	          } else if (typeof responseData.size === 'number') {
+	            materializedSize = responseData.size;
+	          } else if (typeof responseData === 'string') {
+	            materializedSize = typeof TextEncoder === 'function' ? new TextEncoder().encode(responseData).byteLength : responseData.length;
+	          }
+	        }
+	        if (typeof materializedSize === 'number' && materializedSize > maxContentLength) {
+	          throw new AxiosError('maxContentLength size of ' + maxContentLength + ' exceeded', AxiosError.ERR_BAD_RESPONSE, config, request);
+	        }
+	      }
 	      !isStreamResponse && unsubscribe && unsubscribe();
 	      return await new Promise((resolve, reject) => {
 	        settle(resolve, reject, {
@@ -33804,6 +35790,17 @@ function requireAxios$1 () {
 	      });
 	    } catch (err) {
 	      unsubscribe && unsubscribe();
+
+	      // Safari can surface fetch aborts as a DOMException-like object whose
+	      // branded getters throw. Prefer our composed signal reason before reading
+	      // the caught error, preserving timeout vs cancellation semantics.
+	      if (composedSignal && composedSignal.aborted && composedSignal.reason instanceof AxiosError) {
+	        const canceledError = composedSignal.reason;
+	        canceledError.config = config;
+	        request && (canceledError.request = request);
+	        err !== canceledError && (canceledError.cause = err);
+	        throw canceledError;
+	      }
 	      if (err && err.name === 'TypeError' && /Load failed|fetch/i.test(err.message)) {
 	        throw Object.assign(new AxiosError('Network Error', AxiosError.ERR_NETWORK, config, request, err && err.response), {
 	          cause: err.cause || err
@@ -33858,13 +35855,17 @@ function requireAxios$1 () {
 	utils$1.forEach(knownAdapters, (fn, value) => {
 	  if (fn) {
 	    try {
+	      // Null-proto descriptors so a polluted Object.prototype.get cannot turn
+	      // these data descriptors into accessor descriptors on the way in.
 	      Object.defineProperty(fn, 'name', {
+	        __proto__: null,
 	        value
 	      });
 	    } catch (e) {
 	      // eslint-disable-next-line no-empty
 	    }
 	    Object.defineProperty(fn, 'adapterName', {
+	      __proto__: null,
 	      value
 	    });
 	  }
@@ -33979,8 +35980,15 @@ function requireAxios$1 () {
 	  return adapter(config).then(function onAdapterResolution(response) {
 	    throwIfCancellationRequested(config);
 
-	    // Transform response data
-	    response.data = transformData.call(config, config.transformResponse, response);
+	    // Expose the current response on config so that transformResponse can
+	    // attach it to any AxiosError it throws (e.g. on JSON parse failure).
+	    // We clean it up afterwards to avoid polluting the config object.
+	    config.response = response;
+	    try {
+	      response.data = transformData.call(config, config.transformResponse, response);
+	    } finally {
+	      delete config.response;
+	    }
 	    response.headers = AxiosHeaders.from(response.headers);
 	    return response;
 	  }, function onAdapterRejection(reason) {
@@ -33989,7 +35997,12 @@ function requireAxios$1 () {
 
 	      // Transform response data
 	      if (reason && reason.response) {
-	        reason.response.data = transformData.call(config, config.transformResponse, reason.response);
+	        config.response = reason.response;
+	        try {
+	          reason.response.data = transformData.call(config, config.transformResponse, reason.response);
+	        } finally {
+	          delete config.response;
+	        }
 	        reason.response.headers = AxiosHeaders.from(reason.response.headers);
 	      }
 	    }
@@ -34060,7 +36073,9 @@ function requireAxios$1 () {
 	  let i = keys.length;
 	  while (i-- > 0) {
 	    const opt = keys[i];
-	    const validator = schema[opt];
+	    // Use hasOwnProperty so a polluted Object.prototype.<opt> cannot supply
+	    // a non-function validator and cause a TypeError.
+	    const validator = Object.prototype.hasOwnProperty.call(schema, opt) ? schema[opt] : undefined;
 	    if (validator) {
 	      const value = options[opt];
 	      const result = value === undefined || validator(value, opt, options);
@@ -34160,7 +36175,8 @@ function requireAxios$1 () {
 	        silentJSONParsing: validators.transitional(validators.boolean),
 	        forcedJSONParsing: validators.transitional(validators.boolean),
 	        clarifyTimeoutError: validators.transitional(validators.boolean),
-	        legacyInterceptorReqResOrdering: validators.transitional(validators.boolean)
+	        legacyInterceptorReqResOrdering: validators.transitional(validators.boolean),
+	        advertiseZstdAcceptEncoding: validators.transitional(validators.boolean)
 	      }, false);
 	    }
 	    if (paramsSerializer != null) {
@@ -34192,7 +36208,7 @@ function requireAxios$1 () {
 
 	    // Flatten headers
 	    let contextHeaders = headers && utils$1.merge(headers.common, headers[config.method]);
-	    headers && utils$1.forEach(['delete', 'get', 'head', 'post', 'put', 'patch', 'common'], method => {
+	    headers && utils$1.forEach(['delete', 'get', 'head', 'post', 'put', 'patch', 'query', 'common'], method => {
 	      delete headers[method];
 	    });
 	    config.headers = AxiosHeaders.concat(contextHeaders, headers);
@@ -34273,7 +36289,7 @@ function requireAxios$1 () {
 	    }));
 	  };
 	});
-	utils$1.forEach(['post', 'put', 'patch'], function forEachMethodWithData(method) {
+	utils$1.forEach(['post', 'put', 'patch', 'query'], function forEachMethodWithData(method) {
 	  function generateHTTPMethod(isForm) {
 	    return function httpMethod(url, data, config) {
 	      return this.request(mergeConfig(config || {}, {
@@ -34287,7 +36303,12 @@ function requireAxios$1 () {
 	    };
 	  }
 	  Axios.prototype[method] = generateHTTPMethod();
-	  Axios.prototype[method + 'Form'] = generateHTTPMethod(true);
+
+	  // QUERY is a safe/idempotent read method; multipart form bodies don't fit
+	  // its semantics, so no queryForm shorthand is generated.
+	  if (method !== 'query') {
+	    Axios.prototype[method + 'Form'] = generateHTTPMethod(true);
+	  }
 	});
 
 	/**
@@ -34597,8 +36618,8 @@ var hasRequiredUtil$1;
 function requireUtil$1 () {
 	if (hasRequiredUtil$1) return util$1;
 	hasRequiredUtil$1 = 1;
-	const tls = require$$0$5;
-	const dns = require$$1$2.promises;
+	const tls = require$$1$2;
+	const dns = require$$1$3.promises;
 	const { readCertificateInfo, splitPemChain } = requireCrypto();
 	const { log } = requireLogger();
 
@@ -35652,7 +37673,7 @@ var hasRequiredVerify;
 function requireVerify () {
 	if (hasRequiredVerify) return verify;
 	hasRequiredVerify = 1;
-	const dns = require$$1$2.promises;
+	const dns = require$$1$3.promises;
 	const https = require$$4$1;
 	const { log } = requireLogger();
 	const axios = requireAxios();
@@ -65713,15 +67734,15 @@ function requireForge () {
 var hasRequiredSrc;
 
 function requireSrc () {
-	if (hasRequiredSrc) return src$1;
+	if (hasRequiredSrc) return src$2;
 	hasRequiredSrc = 1;
-	src$1.Client = requireClient();
+	src$2.Client = requireClient();
 
 	/**
 	 * Directory URLs
 	 */
 
-	src$1.directory = {
+	src$2.directory = {
 	    buypass: {
 	        staging: 'https://api.test4.buypass.no/acme/directory',
 	        production: 'https://api.buypass.com/acme/directory',
@@ -65743,21 +67764,21 @@ function requireSrc () {
 	 * Crypto
 	 */
 
-	src$1.crypto = requireCrypto();
-	src$1.forge = requireForge();
+	src$2.crypto = requireCrypto();
+	src$2.forge = requireForge();
 
 	/**
 	 * Axios
 	 */
 
-	src$1.axios = requireAxios();
+	src$2.axios = requireAxios();
 
 	/**
 	 * Logger
 	 */
 
-	src$1.setLogger = requireLogger().setLogger;
-	return src$1;
+	src$2.setLogger = requireLogger().setLogger;
+	return src$2;
 }
 
 var srcExports = requireSrc();
@@ -66445,13 +68466,13 @@ const command = mri( process.argv.slice( 2 ), {
 });
 
 if ( command.help || ( process.argv.length <= 2 && process.stdin.isTTY ) ) {
-  console.log( 'Narnia version ' + '0.4.8' );
+  console.log( 'Narnia version ' + '0.4.9' );
   console.log( 'Narnia proxy manager help text go here' );
   process.exit();
 }
 
 if ( command.version ) {
-  console.log( 'Narnia version ' + '0.4.8' );
+  console.log( 'Narnia version ' + '0.4.9' );
   process.exit();
 }
 

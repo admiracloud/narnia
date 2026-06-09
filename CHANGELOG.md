@@ -1,5 +1,9 @@
 # Alumna changelog
 
+## 0.4.9 - 2026-06-09
+
+* Dependencies update
+
 ## 0.4.8 - 2026-04-13
 
 * Dependencies update
